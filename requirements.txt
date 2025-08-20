@@ -1,0 +1,9 @@
+pytz
+loguru
+pandas
+numpy
+requests
+rapidfuzz
+playwright
+playwright_stealth
+unidecode
