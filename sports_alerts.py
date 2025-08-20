@@ -438,5 +438,7 @@ async def main():
     
     print(nrl_df)
     print(nrl_mkt_percents)
-    
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
