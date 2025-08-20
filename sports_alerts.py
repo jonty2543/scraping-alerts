@@ -314,7 +314,7 @@ async def main():
     ub_tennis_df = dfs["ub"]
     
     dfs = [sb_tennis_df, pb_tennis_df, ub_tennis_df]
-    price_cols = ['sb', 'pb', 'ub']
+    price_cols = ['sb_price', 'pb_price', 'ub_price']
     
     print(sb_tennis_df.head(5))
             
