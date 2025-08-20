@@ -217,12 +217,12 @@ async def main():
     # Access them like:
     sb_epl_df = dfs["sb"]
     pb_epl_df = dfs["pb"]
+        
+    dfs = [sb_epl_df, pb_epl_df]
+    price_cols = ['sb_price', 'pb_price']
     
-    print(sb_epl_df)
-    
-    epl_df, epl_mkt_percents = fuzzy_merge_prices(sb_epl_df, pb_epl_df, outcomes=3)
+    epl_df, epl_mkt_percents = fuzzy_merge_prices(dfs, price_cols, outcomes=3)
 
-    print(epl_df)
     print(epl_mkt_percents.head(60))
     
     
