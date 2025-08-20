@@ -6,7 +6,6 @@ import pointsbet_scrapers as pb
 import unibet_scrapers as ub
 import PalmerBet_scrapers as palm
 import betr_scrapers as betr
-import team_mapping as tm
 import asyncio
 import nest_asyncio
 import pandas as pd
