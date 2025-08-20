@@ -4,6 +4,7 @@ pandas
 numpy
 requests
 rapidfuzz
+thefuzz
 playwright
 playwright_stealth==1.0.5
 unidecode
