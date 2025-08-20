@@ -6,6 +6,7 @@ import pointsbet_scrapers as pb
 import unibet_scrapers as ub
 import PalmerBet_scrapers as palm
 import betr_scrapers as betr
+import team_mapping as tm
 import asyncio
 import nest_asyncio
 import pandas as pd
@@ -118,6 +119,46 @@ async def main():
         
         return base_df, npc_mkt_percents
     
+    def arb_alert(arbs):
+        try:
+            with open("alerts_sent.txt", "r") as f:
+                sent_alerts = set(f.read().splitlines())
+        except FileNotFoundError:
+            sent_alerts = set()
+        
+        for match_name, group in arbs.groupby('match'):
+
+            if f'{match_name} {chosen_date}' in sent_alerts:
+                continue  # Skip if alert already sent
+                
+            mkt_percent = group['mkt_percent'].iloc[0] * 100  
+            
+            outcomes = []
+            for _, row in group.iterrows():
+                bookies = ", ".join(row['best_bookie'])
+                outcomes.append(f"{row['result']} {row['best_price']}$ on {bookies}")
+            
+            # Join outcomes with commas and 'and' for the last item
+            if len(outcomes) > 1:
+                outcomes_text = "; ".join(outcomes[:-1]) + "; " + outcomes[-1]
+            else:
+                outcomes_text = outcomes[0]
+            
+            message = f"{match_name}: {mkt_percent:.2f}% market; {outcomes_text}"
+
+        
+            try:
+                response = requests.post(WEBHOOK_URL, json={"content": message})
+                response.raise_for_status()
+        
+                # Append the match to the file after successful send
+                with open("alerts_sent.txt", "a") as f:
+                    f.write(f"{match_name} {chosen_date}\n")
+        
+            except Exception as e:
+                logger.error(f"Webhook failed: {e}")
+                
+    
     def get_pb_comps(sport):
         pb_comps_url = f'https://api.au.pointsbet.com/api/v2/sports/{sport}/competitions'
         
@@ -184,7 +225,9 @@ async def main():
     palm_nrl_url = f'https://fixture.palmerbet.online/fixtures/sports/cf404de1-1953-4d55-b92e-4e022f186b22/matches?sportType=rugbyleague&pageSize=24&channel=website'
     
     betr_union_url = 'https://web20-api.bluebet.com.au/MasterCategory?EventTypeId=105&WithLevelledMarkets=true'
-   
+    betr_nrl_url = 'https://web20-api.bluebet.com.au/MasterCategory?EventTypeId=102&WithLevelledMarkets=true'
+    
+    WEBHOOK_URL = "https://discord.com/api/webhooks/1407711750824132620/dBAZkjoBIHPV-vUNk7C0E4MJ7nUtF1BKd4O1lpHhq_4qbk-47kew9bFmRiSpELAqk6i4"  
     
     
     # %% #---------Football--------#
@@ -201,8 +244,8 @@ async def main():
     #EPL df
     
     bookmakers = {
-        "sb": sb_epl_markets,
-        "pb": pb_epl_markets,
+        "Sportsbet": sb_epl_markets,
+        "Pointsbet": pb_epl_markets,
     }
     
     dfs = {}
@@ -211,21 +254,24 @@ async def main():
         rows = []
         for match, odds in markets.items():
             for result, price in odds.items():
-                rows.append({"match": match, "result": result, f"{name}_price": price})
+                rows.append({"match": match, "result": result, f"{name}": price})
         dfs[name] = pd.DataFrame(rows)
     
     # Access them like:
-    sb_epl_df = dfs["sb"]
-    pb_epl_df = dfs["pb"]
+    sb_epl_df = dfs["Sportsbet"]
+    pb_epl_df = dfs["Pointsbet"]
         
     dfs = [sb_epl_df, pb_epl_df]
-    price_cols = ['sb_price', 'pb_price']
+    price_cols = ['Sportsbet', 'Pointsbet']
     
     epl_df, epl_mkt_percents = fuzzy_merge_prices(dfs, price_cols, outcomes=3)
 
     print(epl_mkt_percents.head(60))
     
-    
+    epl_arbs = epl_mkt_percents[epl_mkt_percents['mkt_percent'] < 1]
+    arb_alert(epl_arbs)
+                
+        
     logger.info(f"Scraping Pointsbet Football Data")
     pb_football_markets = {}
     for comp_id in pb_football_compids:
@@ -244,9 +290,9 @@ async def main():
     
     #Football df
     bookmakers = {
-        "sb": sb_football_markets,
-        "pb": pb_football_markets,
-        "ub": ub_football_markets
+        "Sportsbet": sb_football_markets,
+        "Pointsbet": pb_football_markets,
+        "Unibet": ub_football_markets
     }
     
     dfs = {}
@@ -255,23 +301,23 @@ async def main():
         rows = []
         for match, odds in markets.items():
             for result, price in odds.items():
-                rows.append({"match": match, "result": result, f"{name}_price": price})
+                rows.append({"match": match, "result": result, f"{name}": price})
         dfs[name] = pd.DataFrame(rows)
     
     # Access them like:
-    sb_football_df = dfs["sb"]
-    pb_football_df = dfs["pb"]
-    ub_football_df = dfs["ub"]
+    sb_football_df = dfs["Sportsbet"]
+    pb_football_df = dfs["Pointsbet"]
+    ub_football_df = dfs["Unibet"]
     
     dfs = [sb_football_df, pb_football_df, ub_football_df]
-    price_cols = ['sb_price', 'pb_price', 'ub_price']
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet']
                 
     football_df, football_mkt_percents = fuzzy_merge_prices(dfs, price_cols, outcomes=3)
     
-    print(football_df.head(10)) 
     print(football_mkt_percents.sort_values(by='mkt_percent', ascending=True).head(60))
             
-    
+    football_arbs = football_mkt_percents[football_mkt_percents['mkt_percent'] < 1]
+    arb_alert(football_arbs)
     
     
     # %% #---------Tennis--------#
@@ -294,9 +340,9 @@ async def main():
     
     #tennis df
     bookmakers = {
-        "sb": sb_tennis_markets,
-        "pb": pb_tennis_markets,
-        "ub": ub_tennis_markets
+        "Sportsbet": sb_tennis_markets,
+        "Pointsbet": pb_tennis_markets,
+        "Unibet": ub_tennis_markets
     }
     
     dfs = {}
@@ -305,25 +351,23 @@ async def main():
         rows = []
         for match, odds in markets.items():
             for result, price in odds.items():
-                rows.append({"match": match, "result": result, f"{name}_price": price})
+                rows.append({"match": match, "result": result, f"{name}": price})
         dfs[name] = pd.DataFrame(rows)
     
     # Access them like:
-    sb_tennis_df = dfs["sb"]
-    pb_tennis_df = dfs["pb"]
-    ub_tennis_df = dfs["ub"]
+    sb_tennis_df = dfs["Sportsbet"]
+    pb_tennis_df = dfs["Pointsbet"]
+    ub_tennis_df = dfs["Unibet"]
     
     dfs = [sb_tennis_df, pb_tennis_df, ub_tennis_df]
-    price_cols = ['sb_price', 'pb_price', 'ub_price']
-    
-    print(sb_tennis_df.head(5))
-            
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet']
+                
     tennis_df, tennis_mkt_percents = fuzzy_merge_prices(dfs, price_cols, outcomes=2)
     
-    print(tennis_df.head(60)) 
-    print(tennis_mkt_percents.sort_values(by='market_percent', ascending=True).head(60))
+    print(tennis_mkt_percents.sort_values(by='mkt_percent', ascending=True).head(60))
     
-    
+    tennis_arbs = tennis_mkt_percents[tennis_mkt_percents['mkt_percent'] < 1]
+    arb_alert(tennis_arbs)
     
     
     
@@ -352,11 +396,11 @@ async def main():
     
         
     bookmakers = {
-        "sb": sb_npc_markets,
-        "pb": pb_npc_markets,
-        "ub": ub_npc_markets,
-        "palm": palm_npc_markets,
-        "betr": betr_npc_markets  # Added Betr
+        "Sportsbet": sb_npc_markets,
+        "Poitnsbet": pb_npc_markets,
+        "Unibet": ub_npc_markets,
+        "Palmerbet": palm_npc_markets,
+        "Betr": betr_npc_markets  # Added Betr
     }
     
     dfs = {}
@@ -366,31 +410,34 @@ async def main():
         rows = []
         for match, odds in markets.items():
             for result, price in odds.items():
-                rows.append({"match": match, "result": result, f"{name}_price": price})
+                rows.append({"match": match, "result": result, f"{name}": price})
         dfs[name] = pd.DataFrame(rows)
     
     # Access individual DataFrames
-    sb_npc_df = dfs["sb"]
-    pb_npc_df = dfs["pb"]
-    ub_npc_df = dfs["ub"]
-    palm_npc_df = dfs["palm"]
-    betr_npc_df = dfs["betr"]  # Added Betr
+    sb_npc_df = dfs["Sportsbet"]
+    pb_npc_df = dfs["Pointsbet"]
+    ub_npc_df = dfs["Unibet"]
+    palm_npc_df = dfs["Palmerbet"]
+    betr_npc_df = dfs["Betr"]  # Added Betr
     
     # List of DataFrames for merging
     dfs_list = [sb_npc_df, pb_npc_df, ub_npc_df, palm_npc_df, betr_npc_df]
     
     # Updated list of price columns for fuzzy_merge_prices
-    price_cols = ['sb_price', 'pb_price', 'ub_price', 'palm_price', 'betr_price']
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betr']
     
     # Run fuzzy merge
     npc_df, npc_mkt_percents = fuzzy_merge_prices(dfs_list, price_cols, outcomes=3)
     
     #print(npc_df)
     print(npc_mkt_percents)
+    
+    npc_arbs = npc_mkt_percents[npc_mkt_percents['mkt_percent'] < 1]
+    arb_alert(npc_arbs)
         
     
     # %% #---------NRL--------#
-    get_sportsbet_compids(23)
+    #get_sportsbet_compids(23)
     logger.info(f"Scraping Sportsbet NRL Data")
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=23),  chosen_date=chosen_date)
     sb_nrl_markets = await sb_scraper.SPORTSBET_scraper(competition_id=3436)
@@ -401,43 +448,57 @@ async def main():
     
     logger.info(f"Scraping Unibet NRL Data")
     ub_scraper = ub.UBSportsScraper(get_ub_url('rugby_league'),  chosen_date=chosen_date)
-    ub_nrl_markets = await ub_scraper.UNIBET_scrape_union(comp='NRL')
+    ub_nrl_markets = await ub_scraper.UNIBET_scrape_nrl(comp='NRL')
     
     logger.info(f"Scraping Palmersbet NRL Data")
     palm_scraper = palm.PalmerBetSportsScraper(palm_nrl_url,  chosen_date=chosen_date)
     palm_nrl_markets = await palm_scraper.PalmerBet_scrape_npc(comp='Australia National Rugby League')
     
-    logger.info(f"Scraping Betr NPC Data")
-    betr_scraper = betr.BetrSportsScraper(betr_union_url,  chosen_date=chosen_date)
-    betr_npc_markets = await betr_scraper.Betr_scrape_union(comp='Bunnings NPC')
+    logger.info(f"Scraping Betr NRL Data")
+    betr_scraper = betr.BetrSportsScraper(betr_nrl_url,  chosen_date=chosen_date)
+    betr_nrl_markets = await betr_scraper.Betr_scrape_union(comp='NRL Telstra Premiership')
     
+    # --- Combine bookmaker markets ---
     bookmakers = {
-        "sb": sb_nrl_markets,
-        "pb": pb_nrl_markets,
+        "Sportsbet": sb_nrl_markets,
+        "Poitnsbet": pb_nrl_markets,
+        "Unibet": ub_nrl_markets,
+        "Palmerbet": palm_nrl_markets,
+        "Betr": betr_nrl_markets  # Added Betr
     }
     
     dfs = {}
     
+    # Convert each bookmaker's markets into a DataFrame
     for name, markets in bookmakers.items():
         rows = []
         for match, odds in markets.items():
             for result, price in odds.items():
-                rows.append({"match": match, "result": result, f"{name}_price": price})
+                rows.append({"match": match, "result": result, f"{name}": price})
         dfs[name] = pd.DataFrame(rows)
     
-    # Access them like:
-    sb_nrl_df = dfs["sb"]
-    pb_nrl_df = dfs["pb"]
+    # Access individual DataFrames
+    sb_nrl_df = dfs["Sportsbet"]
+    pb_nrl_df = dfs["Pointsbet"]
+    ub_nrl_df = dfs["Unibet"]
+    palm_nrl_df = dfs["Palmerbet"]
+    betr_nrl_df = dfs["Betr"]  # Added Betr
     
-    print(sb_nrl_df)
-    print(pb_nrl_df)
-
+    # List of DataFrames for merging
+    dfs_list = [sb_nrl_df, pb_nrl_df, ub_nrl_df, palm_nrl_df, betr_nrl_df]
     
-    nrl_df, nrl_mkt_percents = fuzzy_merge_prices(sb_nrl_df, pb_nrl_df, outcomes=2)
+    # Updated list of price columns for fuzzy_merge_prices
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betr']
     
-    print(nrl_df)
+    # Run fuzzy merge
+    nrl_df, nrl_mkt_percents = fuzzy_merge_prices(dfs_list, price_cols, outcomes=3)
+    
+    #print(nrl_df)
     print(nrl_mkt_percents)
-
+    
+    nrl_arbs = nrl_mkt_percents[nrl_mkt_percents['mkt_percent'] < 1]
+    arb_alert(nrl_arbs)
+    
 if __name__ == "__main__":
     asyncio.run(main())
 
