@@ -7,3 +7,4 @@ rapidfuzz
 playwright
 playwright_stealth==1.0.5
 unidecode
+nest_asyncio
