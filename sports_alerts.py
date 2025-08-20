@@ -316,7 +316,7 @@ async def main():
     print(football_mkt_percents.sort_values(by='mkt_percent', ascending=True).head(60))
             
     football_arbs = football_mkt_percents[football_mkt_percents['mkt_percent'] < 1]
-    arb_alert(football_arbs)
+    #arb_alert(football_arbs)
     
     
     # %% #---------Tennis--------#
@@ -396,7 +396,7 @@ async def main():
         
     bookmakers = {
         "Sportsbet": sb_npc_markets,
-        "Poitnsbet": pb_npc_markets,
+        "Pointsbet": pb_npc_markets,
         "Unibet": ub_npc_markets,
         "Palmerbet": palm_npc_markets,
         "Betr": betr_npc_markets  # Added Betr
