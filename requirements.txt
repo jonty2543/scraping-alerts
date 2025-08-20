@@ -5,5 +5,5 @@ numpy
 requests
 rapidfuzz
 playwright
-playwright_stealth
+playwright_stealth==1.0.5
 unidecode
