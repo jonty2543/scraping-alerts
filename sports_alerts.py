@@ -316,7 +316,7 @@ async def main():
     print(football_mkt_percents.sort_values(by='mkt_percent', ascending=True).head(60))
             
     football_arbs = football_mkt_percents[football_mkt_percents['mkt_percent'] < 1]
-    #arb_alert(football_arbs)
+    arb_alert(football_arbs)
     
     
     # %% #---------Tennis--------#
