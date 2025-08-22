@@ -181,7 +181,15 @@ class SBSportsScraper:
 
             await page.goto(self.url)
 
-            all_markets = await page.evaluate(f"() => fetch('{self.url}').then(response => response.json())")
+            for _ in range(3):
+                try:
+                    all_markets = await page.evaluate(f"() => fetch('{self.url}').then(r => r.json())")
+                    break
+                except Exception:
+                    await asyncio.sleep(2)
+            else:
+                logger.error("Failed 3 times")
+                
             if not all_markets:
                 logger.error("Failed to fetch markets")
                 await browser.close()
@@ -220,3 +228,54 @@ class SBSportsScraper:
                 }
                 
         return win_market
+    
+    async def SPORTSBET_scraper_union(self, competition_id='none'):
+        """
+        Union Sportsbet Scraper.
+        """
+        async with async_playwright() as p:
+            # Stealth Browser Set Up to Access Sportsbet API (Not Needed but just copied over from TAB)
+            browser = await p.chromium.launch(headless=True)
+            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
+            page = await browser.new_page(user_agent=ua)
+
+            await page.goto(self.url)
+
+            all_events = await page.evaluate(f"() => fetch('{self.url}').then(response => response.json())")
+            if not all_events:
+                logger.error("Failed to fetch markets")
+                await browser.close()
+    
+            draw_no_bet_markets = {}
+    
+            # Step 2: Loop through each event
+            for event in all_events:
+    
+                # Filter by competition if needed
+                if competition_id != 'none' and event.get("competitionId") != competition_id:
+                    continue
+    
+                if event.get("eventSort") != "MTCH":
+                    continue
+    
+                event_id = event.get("id")
+                if not event_id:
+                    continue
+    
+                # Step 3: Fetch the market groupings for this event
+                market_url = f"https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Events/{event_id}/MarketGroupings/229/Markets"
+                markets = await page.evaluate(f"() => fetch('{market_url}').then(r => r.json())")
+                if not markets:
+                    logger.warning(f"No markets found for event {event_id}")
+                    continue
+    
+                # Step 4: Look for 'Draw No Bet' market
+                for market in markets:
+                    if market.get("name") == "Draw No Bet":
+                        selections = market.get("selections", [])
+                        prices = {sel["name"]: sel["price"]["winPrice"] for sel in selections}
+                        draw_no_bet_markets[event.get("displayName")] = prices
+                        break  # Only need the first Draw No Bet market
+    
+            await browser.close()
+            return draw_no_bet_markets
