@@ -13,7 +13,6 @@ import numpy as np
 import requests
 from rapidfuzz import process, fuzz
 from thefuzz import fuzz, process
-from fuzzywuzzy import fuzz, process
 from functools import reduce
 import re
 import unidecode
@@ -26,8 +25,10 @@ async def main():
     
     # %%
     chosen_date = datetime.now(pytz.timezone("Australia/Brisbane")).date().strftime("%Y-%m-%d")
+    one_week = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(14)).date().strftime("%Y-%m-%d")
     two_week = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(14)).date().strftime("%Y-%m-%d")
     print(chosen_date)
+    print(one_week)
     print(two_week)
     
     
@@ -120,8 +121,6 @@ async def main():
         return ' v '.join(normalized_sides)
             
     def fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=80, result_threshold=50, names=False):
-        import numpy as np
-        from fuzzywuzzy import fuzz, process
     
         # Copy dfs to avoid modifying originals
         dfs = [df.copy() for df in dfs]
@@ -151,14 +150,6 @@ async def main():
             match_map = {}
 
             for base_mtch in base_df['match_fuzzy'].dropna().unique():
-                best_mtch = process.extractOne(
-                    base_mtch,
-                    other_matches,
-                    scorer=fuzz.token_sort_ratio
-                )
-                if best_mtch and best_mtch[1] >= match_threshold:
-                    match_map[base_mtch] = best_mtch[0]
-   
                 best_mtch = process.extractOne(
                     base_mtch,
                     other_matches,
@@ -360,7 +351,7 @@ async def main():
 
     
     def get_sportsbet_url(sportId: int):
-        return f'https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Events?primaryMarketOnly=true&fromDate={chosen_date}T00:00:00&toDate={two_week}T23:59:59&sportsId={sportId}&numEventsPerClass=2000&detailsLevel=O'
+        return f'https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Events?primaryMarketOnly=true&fromDate={chosen_date}T00:00:00&toDate={one_week}T23:59:59&sportsId={sportId}&numEventsPerClass=2000&detailsLevel=O'
     
     def get_sportsbet_compids(sportId: int):
         url = get_sportsbet_url(sportId)
@@ -508,7 +499,7 @@ async def main():
     print(f"pb_football_df:{pb_football_df[['match_norm', 'result_norm']].head(50)}")
     #print(f"ub_football_df:{ub_football_df[['match_norm', 'result_norm']].head(50)}")
     
-    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet']
+    price_cols = ['Sportsbet', 'Pointsbet']#, 'Unibet']
                 
     football_df, football_mkt_percents = fuzzy_merge_prices(dfs, price_cols, outcomes=3)
     

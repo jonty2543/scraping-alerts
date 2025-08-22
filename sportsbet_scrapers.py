@@ -1,6 +1,7 @@
 import time
 import asyncio
 import traceback
+import json
 
 from loguru                       import logger
 from random                       import randrange
@@ -167,7 +168,7 @@ class SBSportsScraper:
         self.chosen_date = chosen_date
         # self.jurisdiction = self.map_jurisdiction(jurisdiction)
     
-    async def SPORTSBET_scraper(self, competition_id='none'):
+    async def SPORTSBET_scraper(self, competition_id='none', retries=3, delay=2):
         """
         Union Sportsbet Scraper.
         """
@@ -181,23 +182,10 @@ class SBSportsScraper:
 
             await page.goto(self.url)
 
-            for _ in range(3):
-                try:
-                    all_markets = await page.evaluate(f"() => fetch('{self.url}').then(r => r.json())")
-                    break
-                except Exception:
-                    await asyncio.sleep(2)
-            else:
-                logger.error("Failed 3 times")
-                
+            all_markets = await page.evaluate(f"() => fetch('{self.url}').then(response => response.json())")
             if not all_markets:
                 logger.error("Failed to fetch markets")
                 await browser.close()
-                
-            if not all_markets:
-                logger.error("Failed to fetch markets")
-                await browser.close()
-                return {}
                                         
             win_market = {}
                 
