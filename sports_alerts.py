@@ -495,16 +495,16 @@ async def main():
         # Normalize matches
         df['match_norm'] = df['match'].apply(normalize_match)
     
-    print(f"sb_football_df:{sb_football_df[['match_norm', 'result_norm']].head(50)}")
-    print(f"pb_football_df:{pb_football_df[['match_norm', 'result_norm']].head(50)}")
+    #print(f"sb_football_df:{sb_football_df[['match_norm', 'result_norm']].head(50)}")
+    #print(f"pb_football_df:{pb_football_df[['match_norm', 'result_norm']].head(50)}")
     #print(f"ub_football_df:{ub_football_df[['match_norm', 'result_norm']].head(50)}")
     
     price_cols = ['Sportsbet', 'Pointsbet']#, 'Unibet']
                 
     football_df, football_mkt_percents = fuzzy_merge_prices(dfs, price_cols, match_threshold=70, result_threshold=50, outcomes=3)
     
-    print(football_df.head(60))
-    print(football_mkt_percents.sort_values(by='mkt_percent', ascending=True).head(60))
+    #print(football_df.head(60))
+    print(football_mkt_percents.sort_values(by='mkt_percent', ascending=True).head(10))
             
     football_arbs = football_mkt_percents[football_mkt_percents['mkt_percent'] < 1]
     arb_alert(football_arbs)
@@ -642,8 +642,8 @@ async def main():
     npc_df, npc_mkt_percents = fuzzy_merge_prices(dfs_list, price_cols, outcomes=2)
     
     #print(npc_df)
-    print(npc_df)
-    print(npc_mkt_percents)
+    #print(npc_df)
+    print(npc_mkt_percents.head(10))
     
     npc_arbs = npc_mkt_percents[npc_mkt_percents['mkt_percent'] < 1]
     arb_alert(npc_arbs)
@@ -700,11 +700,11 @@ async def main():
     palm_nrl_df = dfs["Palmerbet"]
     betr_nrl_df = dfs["Betr"]  # Added Betr
     
-    print(f'sb_nrl_df:{sb_nrl_df}')
-    print(f'pb_nrl_df:{pb_nrl_df}')
-    print(f'ub_nrl_df:{ub_nrl_df}')
-    print(f'palm_nrl_df:{palm_nrl_df}')
-    print(f'betr_nrl_df:{betr_nrl_df}')
+    #print(f'sb_nrl_df:{sb_nrl_df}')
+    #print(f'pb_nrl_df:{pb_nrl_df}')
+    #print(f'ub_nrl_df:{ub_nrl_df}')
+    #print(f'palm_nrl_df:{palm_nrl_df}')
+    #print(f'betr_nrl_df:{betr_nrl_df}')
     
     # List of DataFrames for merging
     dfs_list = [sb_nrl_df, pb_nrl_df, ub_nrl_df, palm_nrl_df, betr_nrl_df]
@@ -716,8 +716,8 @@ async def main():
     nrl_df, nrl_mkt_percents = fuzzy_merge_prices(dfs_list, price_cols, outcomes=3)
     
     #print(nrl_df)
-    print(nrl_df.head(60))
-    print(nrl_mkt_percents)
+    #print(nrl_df.head(60))
+    print(nrl_mkt_percents.head(10))
     
     nrl_arbs = nrl_mkt_percents[nrl_mkt_percents['mkt_percent'] < 1]
     arb_alert(nrl_arbs)
