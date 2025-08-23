@@ -120,7 +120,7 @@ async def main():
         
         return ' v '.join(normalized_sides)
             
-    def fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=80, result_threshold=50, names=False):
+    def fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=90, result_threshold=70, names=False):
     
         # Copy dfs to avoid modifying originals
         dfs = [df.copy() for df in dfs]
@@ -501,10 +501,10 @@ async def main():
     
     price_cols = ['Sportsbet', 'Pointsbet']#, 'Unibet']
                 
-    football_df, football_mkt_percents = fuzzy_merge_prices(dfs, price_cols, match_threshold=70, result_threshold=50, outcomes=3)
+    football_df, football_mkt_percents = fuzzy_merge_prices(dfs, price_cols, outcomes=3)
     
     #print(football_df.head(60))
-    print(football_mkt_percents.sort_values(by='mkt_percent', ascending=True).head(10))
+    print(football_mkt_percents[['match', 'mk_percent']].sort_values(by='mkt_percent', ascending=True).head(10))
             
     football_arbs = football_mkt_percents[football_mkt_percents['mkt_percent'] < 1]
     arb_alert(football_arbs)
@@ -643,7 +643,7 @@ async def main():
     
     #print(npc_df)
     #print(npc_df)
-    print(npc_mkt_percents.head(10))
+    print(npc_mkt_percents[['match', 'mk_percent']].head(10))
     
     npc_arbs = npc_mkt_percents[npc_mkt_percents['mkt_percent'] < 1]
     arb_alert(npc_arbs)
@@ -717,7 +717,7 @@ async def main():
     
     #print(nrl_df)
     #print(nrl_df.head(60))
-    print(nrl_mkt_percents.head(10))
+    print(nrl_mkt_percents[['match', 'mk_percent']].head(10))
     
     nrl_arbs = nrl_mkt_percents[nrl_mkt_percents['mkt_percent'] < 1]
     arb_alert(nrl_arbs)
