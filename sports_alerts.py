@@ -501,7 +501,7 @@ async def main():
     
     price_cols = ['Sportsbet', 'Pointsbet']#, 'Unibet']
                 
-    football_df, football_mkt_percents = fuzzy_merge_prices(dfs, price_cols, outcomes=3)
+    football_df, football_mkt_percents = fuzzy_merge_prices(dfs, price_cols, match_threshold=70, result_threshold=50, outcomes=3)
     
     print(football_df.head(60))
     print(football_mkt_percents.sort_values(by='mkt_percent', ascending=True).head(60))
@@ -649,7 +649,7 @@ async def main():
     arb_alert(npc_arbs)
     
     npc_price_diffs = npc_df[['result', 'match'] + price_cols]
-    prob_alert(npc_price_diffs, diff_lim=0.05)
+    prob_alert(npc_price_diffs, diff_lim=0.06)
         
     
     # %% #---------NRL--------#
@@ -723,7 +723,7 @@ async def main():
     arb_alert(nrl_arbs)
     
     nrl_price_diffs = nrl_df[['result', 'match'] + price_cols]
-    prob_alert(nrl_price_diffs, diff_lim=0.05)
+    prob_alert(nrl_price_diffs, diff_lim=0.06)
     
 if __name__ == "__main__":
     asyncio.run(main())
