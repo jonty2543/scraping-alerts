@@ -121,34 +121,45 @@ async def main():
         return ' v '.join(normalized_sides)
             
     def fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=90, result_threshold=70, names=False):
+        # Filter out completely empty dfs
+        dfs = [df.copy() for df in dfs if not df.empty]
     
-        # Copy dfs to avoid modifying originals
-        dfs = [df.copy() for df in dfs]
-        
-        if names:
-            for df in dfs:
-                df['match_norm'] = df['match'].apply(normalize_players_match)
-                df['result_norm'] = df['result'].apply(normalize_players_result)
-        
-        else:
-            # Normalize match and result names
-            for df in dfs:
-                df['match_norm'] = df['match'].apply(normalize_match)
-                df['result_norm'] = df['result'].apply(normalize_result)
+        # If no data at all, return empty
+        if not dfs:
+            return pd.DataFrame(columns=['match', 'result', 'mkt_percent', 'best_price', 'best_bookie']), pd.DataFrame()
     
         # Use first dataframe as base
         base_df = dfs[0].copy()
+        if base_df.empty:
+            return pd.DataFrame(columns=['match', 'result', 'mkt_percent', 'best_price', 'best_bookie']), pd.DataFrame()
+    
+        # Normalize names
+        if names:
+            for df in dfs:
+                if 'match' in df and 'result' in df:
+                    df['match_norm'] = df['match'].apply(normalize_players_match)
+                    df['result_norm'] = df['result'].apply(normalize_players_result)
+        else:
+            for df in dfs:
+                if 'match' in df and 'result' in df:
+                    df['match_norm'] = df['match'].apply(normalize_match)
+                    df['result_norm'] = df['result'].apply(normalize_result)
+    
         base_df['match_fuzzy'] = base_df['match_norm']
         base_df['result_fuzzy'] = base_df['result_norm']
     
         # Merge each other dataframe
         for i, other_df in enumerate(dfs[1:], 1):
+            if other_df.empty:
+                continue  # skip
+    
             other_df = other_df.copy()
     
-            # Only consider matches that actually exist in this bookie
             other_matches = other_df['match_norm'].dropna().unique()
+            if len(other_matches) == 0:
+                continue  # nothing to merge
+    
             match_map = {}
-
             for base_mtch in base_df['match_fuzzy'].dropna().unique():
                 best_mtch = process.extractOne(
                     base_mtch,
@@ -161,7 +172,7 @@ async def main():
             # Map matches
             other_df['match_fuzzy'] = other_df['match_norm'].map({v: k for k, v in match_map.items()})
     
-            # Fuzzy match results only for matched matches
+            # Map results
             for base_mtch, other_mtch in match_map.items():
                 base_rows = base_df[base_df['match_fuzzy'] == base_mtch]
                 other_rows = other_df[other_df['match_norm'] == other_mtch]
@@ -179,46 +190,51 @@ async def main():
                 other_df.loc[other_rows.index, 'result_fuzzy'] = other_rows['result_norm'].map(
                     {v: k for k, v in result_map.items()}
                 )
-                
+    
             if 'result_fuzzy' not in other_df.columns:
                 other_df['result_fuzzy'] = np.nan
-                
+    
             for col in ['match_fuzzy', 'result_fuzzy']:
                 if col not in other_df.columns:
                     other_df[col] = None
                 other_df[col] = other_df[col].astype(str).replace('nan', '')
-            
+    
             base_df['match_fuzzy'] = base_df['match_fuzzy'].astype(str).replace('nan', '')
             base_df['result_fuzzy'] = base_df['result_fuzzy'].astype(str).replace('nan', '')
     
-            # Merge bookie column into base_df
-            merge_cols = ['match_fuzzy', 'result_fuzzy', bookie_names[i]]
-            base_df = base_df.merge(
-                other_df[merge_cols],
-                on=['match_fuzzy', 'result_fuzzy'],
-                how='left'
-            )
+            # Merge safely
+            if bookie_names[i] in other_df.columns:
+                merge_cols = ['match_fuzzy', 'result_fuzzy', bookie_names[i]]
+                base_df = base_df.merge(
+                    other_df[merge_cols],
+                    on=['match_fuzzy', 'result_fuzzy'],
+                    how='left'
+                )
     
-        # Calculate best prices and bookies
-        base_df['best_price'] = base_df[bookie_names].max(axis=1, skipna=True)
+        # If no bookie columns exist, return empty
+        bookie_cols = [c for c in bookie_names if c in base_df.columns]
+        if not bookie_cols:
+            return pd.DataFrame(columns=['match', 'result', 'mkt_percent', 'best_price', 'best_bookie']), pd.DataFrame()
+    
+        # Calculate best prices
+        base_df['best_price'] = base_df[bookie_cols].max(axis=1, skipna=True)
         base_df['best_bookie'] = base_df.apply(
-            lambda row: [col for col in bookie_names if row[col] == row['best_price']], axis=1
+            lambda row: [col for col in bookie_cols if row[col] == row['best_price']], axis=1
         )
-        base_df['best_prob'] = 1 / base_df['best_price']
+        base_df['best_prob'] = base_df['best_price'].apply(lambda x: 1/x if pd.notnull(x) and x > 0 else np.nan)
     
-        # Compute match-level market percent
-        match_mkt = base_df.groupby('match_fuzzy', as_index=False)['best_prob'].sum().rename(
-            columns={'best_prob': 'mkt_percent'}
-        )
-    
-        # Merge back
-        mkt_percents = base_df.merge(match_mkt, on='match_fuzzy', how='left')
-    
-        # Keep only relevant columns for alerting
-        mkt_percents = mkt_percents[['match', 'result', 'mkt_percent', 'best_price', 'best_bookie']]
+        # Market-level %
+        if not base_df.empty:
+            match_mkt = base_df.groupby('match_fuzzy', as_index=False)['best_prob'].sum().rename(
+                columns={'best_prob': 'mkt_percent'}
+            )
+            mkt_percents = base_df.merge(match_mkt, on='match_fuzzy', how='left')
+            mkt_percents = mkt_percents[['match', 'result', 'mkt_percent', 'best_price', 'best_bookie']]
+        else:
+            mkt_percents = pd.DataFrame(columns=['match', 'result', 'mkt_percent', 'best_price', 'best_bookie'])
     
         return base_df, mkt_percents
-    
+
     def arb_alert(arbs, test=False):
         if not test:
             try:
@@ -643,7 +659,7 @@ async def main():
     
     #print(npc_df)
     #print(npc_df)
-    print(npc_mkt_percents[['match', 'mk_percent']].head(10))
+    print(npc_mkt_percents[['match', 'mkt_percent']].head(10))
     
     npc_arbs = npc_mkt_percents[npc_mkt_percents['mkt_percent'] < 1]
     arb_alert(npc_arbs)
@@ -717,7 +733,7 @@ async def main():
     
     #print(nrl_df)
     #print(nrl_df.head(60))
-    print(nrl_mkt_percents[['match', 'mk_percent']].head(10))
+    print(nrl_mkt_percents[['match', 'mkt_percent']].head(10))
     
     nrl_arbs = nrl_mkt_percents[nrl_mkt_percents['mkt_percent'] < 1]
     arb_alert(nrl_arbs)
