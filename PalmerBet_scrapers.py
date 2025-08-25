@@ -21,7 +21,7 @@ class PalmerBetSportsScraper:
         # self.jurisdiction = self.map_jurisdiction(jurisdiction)
 
 
-    async def PalmerBet_scrape_npc(self, comp):
+    async def PalmerBet_scrape(self, comp, sport=None):
         """
         NPC PalmerBet Scraper.
         """
@@ -55,12 +55,12 @@ class PalmerBetSportsScraper:
             return win_market
 
         for game in matches:
-            if game['paths'][2]['title'] == comp:
+            if game['paths'][2]['title'] == comp or not comp:
                 
                 prices = []
                 results = []
-                    
-                
+    
+                                  
                 for team_key in ["homeTeam", "awayTeam"]:
                     team = game.get(team_key, {})
                     name = team.get("title")
@@ -68,14 +68,16 @@ class PalmerBetSportsScraper:
                     
                     results.append(name)
                     prices.append(price)
+                
+                if sport == 'football':
+                    results.append('draw')
+                    prices.append(game['draw']['price'])
                     
-                match = f'{results[0]} vs {results[1]}'
-                    
-                win_market[match] = {
-                    results[0]: prices[0],
-                    results[1]: prices[1]
-                }
-      
+                match = " vs ".join(results[:2])
+        
+                # Store outcome-price pairs in dict
+                win_market[match] = {res: price for res, price in zip(results, prices)}
+              
         return win_market
     
     
