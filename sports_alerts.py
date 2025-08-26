@@ -296,7 +296,7 @@ async def main():
             probs = {}
             prices = {}
             for bookie in df.columns[2:]:  # skip "result" column
-                if pd.notna(row[bookie]) and price > 0:
+                if pd.notna(row[bookie]) and row[bookie] > 0:
                     probs[bookie] = 1 / row[bookie]
     
             if not probs:
