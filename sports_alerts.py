@@ -291,7 +291,7 @@ async def main():
         for _, row in df.iterrows():
             result_name = row["result"]
             match = row['match']
-    
+
             # Convert odds to implied probabilities (ignoring NaNs)
             probs = {}
             prices = {}
