@@ -546,7 +546,7 @@ async def main():
     df_mapped = cleaned_df.rename(columns=col_map)
     df_mapped = df_mapped[[col for col in df_mapped.columns if col in col_map.values()]]
     df_mapped['Best Bookie'] = df_mapped['Best Bookie'].apply(lambda x: ', '.join(x) if isinstance(x, list) else str(x))
-    df_mapped['Market %'] = (df_mapped['Market %'] * 100).round(4)
+    df_mapped['Market %'] = (df_mapped['Market %']).round(4)
 
     records = df_mapped.to_dict(orient="records")
     
@@ -699,13 +699,8 @@ async def main():
         npc_df, npc_mkt_percents = fuzzy_merge_prices(dfs_list, price_cols, match_threshold=80, outcomes=2)
         
         # Merge market percentages
-        npc_df = pd.merge(
-            npc_df,
-            npc_mkt_percents[['match', 'mkt_percent']],
-            on='match',
-            how='left'
-        )
-        
+        npc_df = pd.merge(npc_df, npc_mkt_percents[['match', 'result', 'mkt_percent']], on=['match', 'result'])
+
         logger.info(f"Pointsbet football matched: {npc_df['Pointsbet'].count() / len(pb_npc_df)}")
         logger.info(f"Unibet npc matched: {npc_df['Unibet'].count() / len(ub_npc_df)}")
         logger.info(f"Betr npc matched: {npc_df['Betr'].count() / len(betr_npc_df)}")
@@ -728,7 +723,7 @@ async def main():
         df_mapped = cleaned_df.rename(columns=col_map)
         df_mapped = df_mapped[[col for col in df_mapped.columns if col in col_map.values()]]
         df_mapped['Best Bookie'] = df_mapped['Best Bookie'].apply(lambda x: ', '.join(x) if isinstance(x, list) else str(x))
-        df_mapped['Market %'] = (df_mapped['Market %'] * 100).round(4)
+        df_mapped['Market %'] = (df_mapped['Market %']).round(4)
 
         records = df_mapped.to_dict(orient="records")
         
@@ -839,7 +834,7 @@ async def main():
     df_mapped = cleaned_df.rename(columns=col_map)
     df_mapped = df_mapped[[col for col in df_mapped.columns if col in col_map.values()]]
     df_mapped['Best Bookie'] = df_mapped['Best Bookie'].apply(lambda x: ', '.join(x) if isinstance(x, list) else str(x))
-    df_mapped['Market %'] = (df_mapped['Market %'] * 100).round(4)
+    df_mapped['Market %'] = (df_mapped['Market %']).round(4)
 
     records = df_mapped.to_dict(orient="records")
     
