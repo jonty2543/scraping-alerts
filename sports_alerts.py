@@ -296,7 +296,7 @@ async def main():
             probs = {}
             prices = {}
             for bookie in df.columns[2:]:  # skip "result" column
-                if pd.notna(row[bookie]):
+                if pd.notna(row[bookie]) and price > 0:
                     probs[bookie] = 1 / row[bookie]
     
             if not probs:
@@ -391,7 +391,7 @@ async def main():
         return f'https://api.au.pointsbet.com/api/mes/v3/events/featured/competition/{competition_id}?page=1'
     
     def get_ub_url(sport):
-        return f'https://www.unibet.com.au/sportsbook-feeds/views/filter/{sport}/all/matches?includeParticipants=true&useCombined=true&ncid=1755083716'
+        return f'https://www.unibet.com.au/sportsbook-feeds/views/filter/{sport}/all/matches?includeParticipants=true&useCombined=true'
     
     def result_searcher(df, result):
         print(df[df['result'] == result])
@@ -513,10 +513,10 @@ async def main():
     # Combine into list
     dfs = [sb_football_df, pb_football_df, palm_football_df]  # , ub_football_df]
     
-    # Normalize results and matches
+    '''# Normalize results and matches
     for df in dfs:
         df['result_norm'] = df['result'].apply(normalize_result)
-        df['match_norm'] = df['match'].apply(normalize_match)
+        df['match_norm'] = df['match'].apply(normalize_match)'''
     
     price_cols = ['Sportsbet', 'Pointsbet', 'Palmerbet']  # , 'Unibet']
     
@@ -528,8 +528,11 @@ async def main():
         on=['result', 'match']
     )
     
-    logger.info(f"Pointsbet football matched: {football_df['Pointsbet'].count() / len(pb_football_df)}")
-    logger.info(f"Palmerbet football matched: {football_df['Palmerbet'].count() / len(palm_football_df)}")
+    if len(pb_football_df) > 0:
+        logger.info(f"Pointsbet football matched: {football_df['Pointsbet'].count() / len(pb_football_df)}")
+    
+    if len(palm_football_df) > 0:
+        logger.info(f"Palmerbet football matched: {football_df['Palmerbet'].count() / len(palm_football_df)}")
     
     col_map = {
         "match": "Match",
@@ -639,34 +642,38 @@ async def main():
     
    
     
-    # %% #---------NPC--------#
+    # %% #---------union--------#
     logger.info(f"Scraping Sportsbet Union Data")
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=12),  chosen_date=chosen_date)
-    sb_npc_markets = await sb_scraper.SPORTSBET_scraper_union(competition_id=27313)
+    sb_union_markets = await sb_scraper.SPORTSBET_scraper_union()
     
-    logger.info(f"Scraping Unibet NPC Data")
+    logger.info(f"Scraping Unibet union Data")
     ub_scraper = ub.UBSportsScraper(get_ub_url('rugby_union'),  chosen_date=chosen_date)
-    ub_npc_markets = await ub_scraper.UNIBET_scrape_union(comp='NZ NPC')
+    ub_union_markets = await ub_scraper.UNIBET_scrape_union()
     
-    logger.info(f"Scraping Pointsbet NPC Data")
-    pb_scraper = pb.PBSportsScraper(pb_union_url,  chosen_date=chosen_date)
-    pb_npc_markets = await pb_scraper.POINTSBET_scrape_union(market_type='Head to Head')
+    pb_union_compids = get_pb_comps('rugby-union')  
+    pb_union_markets = {}   
+    logger.info(f"Scraping Pointsbet union Data")
+    for comp_id in pb_union_compids:      
+        pb_scraper = pb.PBSportsScraper(get_pb_url(comp_id),  chosen_date=chosen_date)
+        comp_markets = await pb_scraper.POINTSBET_scrape_union(market_type='Head to Head')
+        pb_union_markets.update(comp_markets)
     
-    logger.info(f"Scraping Palmersbet NPC Data")
+    logger.info(f"Scraping Palmersbet union Data")
     palm_scraper = palm.PalmerBetSportsScraper(palm_union_url,  chosen_date=chosen_date)
-    palm_npc_markets = await palm_scraper.PalmerBet_scrape(comp='New Zealand Mitre 10 Cup')
+    palm_union_markets = await palm_scraper.PalmerBet_scrape()
     
-    logger.info(f"Scraping Betr NPC Data")
+    logger.info(f"Scraping Betr union Data")
     betr_scraper = betr.BetrSportsScraper(betr_union_url,  chosen_date=chosen_date)
-    betr_npc_markets = await betr_scraper.Betr_scrape_union(comp='Bunnings NPC')
+    betr_union_markets = await betr_scraper.Betr_scrape_union()
     
         
     bookmakers = {
-        "Sportsbet": sb_npc_markets,
-        "Pointsbet": pb_npc_markets,
-        "Unibet": ub_npc_markets,
-        "Palmerbet": palm_npc_markets,
-        "Betr": betr_npc_markets  # Added Betr
+        "Sportsbet": sb_union_markets,
+        "Pointsbet": pb_union_markets,
+        "Unibet": ub_union_markets,
+        "Palmerbet": palm_union_markets,
+        "Betr": betr_union_markets  # Added Betr
     }
     
     dfs = {}
@@ -680,31 +687,38 @@ async def main():
         dfs[name] = pd.DataFrame(rows)
     
     # Access individual DataFrames
-    sb_npc_df = dfs["Sportsbet"]
-    pb_npc_df = dfs["Pointsbet"]
-    ub_npc_df = dfs["Unibet"]
-    palm_npc_df = dfs["Palmerbet"]
-    betr_npc_df = dfs["Betr"]
+    sb_union_df = dfs["Sportsbet"]
+    pb_union_df = dfs["Pointsbet"]
+    ub_union_df = dfs["Unibet"]
+    palm_union_df = dfs["Palmerbet"]
+    betr_union_df = dfs["Betr"]
     
     # List of DataFrames for merging
-    dfs_list = [sb_npc_df, pb_npc_df, ub_npc_df, palm_npc_df, betr_npc_df]
+    dfs_list = [sb_union_df, pb_union_df, ub_union_df, palm_union_df, betr_union_df]
     
     # Updated list of price columns for fuzzy_merge_prices
     price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betr']
     
-    logger.info(f"Merge NPC dfs")            
+    logger.info(f"Merge union dfs")            
     if any(len(df) > 0 for df in dfs_list):
-        logger.info("Merge NPC dfs")
+        logger.info("Merge union dfs")
         
-        npc_df, npc_mkt_percents = fuzzy_merge_prices(dfs_list, price_cols, match_threshold=80, outcomes=2)
+        union_df, union_mkt_percents = fuzzy_merge_prices(dfs_list, price_cols, match_threshold=80, outcomes=2)
         
         # Merge market percentages
-        npc_df = pd.merge(npc_df, npc_mkt_percents[['match', 'result', 'mkt_percent']], on=['match', 'result'])
+        union_df = pd.merge(union_df, union_mkt_percents[['match', 'result', 'mkt_percent']], on=['match', 'result'])
 
-        logger.info(f"Pointsbet football matched: {npc_df['Pointsbet'].count() / len(pb_npc_df)}")
-        logger.info(f"Unibet npc matched: {npc_df['Unibet'].count() / len(ub_npc_df)}")
-        logger.info(f"Betr npc matched: {npc_df['Betr'].count() / len(betr_npc_df)}")
-        logger.info(f"Palmerbet npc matched: {npc_df['Palmerbet'].count() / len(palm_npc_df)}")
+        if len(pb_union_df) > 0:
+            logger.info(f"Pointsbet union matched: {union_df['Pointsbet'].count() / len(pb_union_df)}")
+        
+        if len(ub_union_df) > 0:
+            logger.info(f"Unibet union matched: {union_df['Unibet'].count() / len(ub_union_df)}")
+        
+        if len(betr_union_df) > 0:
+            logger.info(f"Betr union matched: {union_df['Betr'].count() / len(betr_union_df)}")
+        
+        if len(palm_union_df) > 0:
+            logger.info(f"Palmerbet union matched: {union_df['Palmerbet'].count() / len(palm_union_df)}")
 
         col_map = {
             "match": "Match",
@@ -715,11 +729,11 @@ async def main():
             "Palmerbet": "Palmerbet",
             "Betr": "Betr",
             "best_bookie": "Best Bookie",
-            "best_prob": "Best Price",
+            "best_price": "Best Price",
             "mkt_percent": "Market %"
         }
       
-        cleaned_df = npc_df.fillna(0.0)
+        cleaned_df = union_df.fillna(0.0)
         df_mapped = cleaned_df.rename(columns=col_map)
         df_mapped = df_mapped[[col for col in df_mapped.columns if col in col_map.values()]]
         df_mapped['Best Bookie'] = df_mapped['Best Bookie'].apply(lambda x: ', '.join(x) if isinstance(x, list) else str(x))
@@ -727,24 +741,24 @@ async def main():
 
         records = df_mapped.to_dict(orient="records")
         
-        logger.info(f"Upsert npc to supabase")            
-        response = supabase.table("NPC Odds").upsert(
+        logger.info(f"Upsert union to supabase")            
+        response = supabase.table("Rugby Union Odds").upsert(
             records,
             on_conflict="Match,Result" 
         ).execute()
 
-        print(npc_mkt_percents[['match', 'mkt_percent']].head(10))
+        print(union_mkt_percents[['match', 'mkt_percent']].head(10))
         
-        logger.info(f"Send NPC discord alerts")            
-        npc_arbs = npc_mkt_percents[npc_mkt_percents['mkt_percent'] < 1]
-        arb_alert(npc_arbs)
+        logger.info(f"Send union discord alerts")            
+        union_arbs = union_mkt_percents[union_mkt_percents['mkt_percent'] < 1]
+        arb_alert(union_arbs)
         
-        npc_price_diffs = npc_df[['result', 'match'] + price_cols]
-        prob_alert(npc_price_diffs, diff_lim=0.06)
+        union_price_diffs = union_df[['result', 'match'] + price_cols]
+        prob_alert(union_price_diffs, diff_lim=0.06)
             
         
     else:
-        logger.info("No data in NPC dfs; skipping merge")
+        logger.info("No data in union dfs; skipping merge")
         
     
     # %% #---------NRL--------#
@@ -811,11 +825,18 @@ async def main():
     nrl_df, nrl_mkt_percents = fuzzy_merge_prices(dfs_list, price_cols, match_threshold=80, outcomes=2)
     
     nrl_df = pd.merge(nrl_df, nrl_mkt_percents[['match', 'result', 'mkt_percent']], on=['match', 'result'])
+
+    if len(pb_nrl_df) > 0:
+        logger.info(f"Pointsbet nrl matched: {nrl_df['Pointsbet'].count() / len(pb_nrl_df)}")
     
-    logger.info(f"Pointsbet football matched: {nrl_df['Pointsbet'].count() / len(pb_nrl_df)}")
-    logger.info(f"Unibet nrl matched: {nrl_df['Unibet'].count() / len(ub_nrl_df)}")
-    logger.info(f"Betr nrl matched: {nrl_df['Betr'].count() / len(betr_nrl_df)}")
-    logger.info(f"Palmerbet nrl matched: {nrl_df['Palmerbet'].count() / len(palm_nrl_df)}")
+    if len(ub_nrl_df) > 0:
+        logger.info(f"Unibet nrl matched: {nrl_df['Unibet'].count() / len(ub_nrl_df)}")
+    
+    if len(betr_nrl_df) > 0:
+        logger.info(f"Betr nrl matched: {nrl_df['Betr'].count() / len(betr_nrl_df)}")
+    
+    if len(palm_nrl_df) > 0:
+        logger.info(f"Palmerbet nrl matched: {nrl_df['Palmerbet'].count() / len(palm_nrl_df)}")
 
     col_map = {
         "match": "Match",
@@ -826,7 +847,7 @@ async def main():
         "Palmerbet": "Palmerbet",
         "Betr": "Betr",
         "best_bookie": "Best Bookie",
-        "best_prob": "Best Price",
+        "best_price": "Best Price",
         "mkt_percent": "Market %"
     }
     

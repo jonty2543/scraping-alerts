@@ -133,7 +133,7 @@ class UBSportsScraper:
 
         return win_market
     
-    async def UNIBET_scrape_union(self, comp):
+    async def UNIBET_scrape_union(self, comp=False):
         """
         football Unibet Scraper.
         """
@@ -167,11 +167,12 @@ class UBSportsScraper:
 
         for group in groups:
             
-            if group['name'] != comp:
-                continue
+            if comp:
+                if group['name'] != comp:
+                    continue
             
-            for comp in group.get("events", []):
-                event = comp.get("event", {})
+            for game in (group.get("events") or []):
+                event = game.get("event", {})
                 match_name = event.get("englishName") or event.get("name")
 
                 if not match_name:
@@ -179,7 +180,7 @@ class UBSportsScraper:
 
                 win_market.setdefault(match_name, {})
 
-                for bet_offer in comp.get("betOffers", []):
+                for bet_offer in game.get("betOffers", []):
                     bet_type = bet_offer.get("betOfferType", {}).get("englishName", "")
                     if bet_type.lower() == "match":  # Match odds only
                         for outcome in bet_offer.get("outcomes", []):

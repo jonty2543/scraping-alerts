@@ -240,8 +240,9 @@ class SBSportsScraper:
             for event in all_events:
     
                 # Filter by competition if needed
-                if competition_id != 'none' and event.get("competitionId") != competition_id:
-                    continue
+                if competition_id != 'none':
+                    if event.get("competitionId") != competition_id:
+                        continue
     
                 if event.get("eventSort") != "MTCH":
                     continue
