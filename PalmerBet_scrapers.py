@@ -56,28 +56,29 @@ class PalmerBetSportsScraper:
 
         for game in matches:
             if comp:
-                if game['paths'][2]['title'] == comp or not comp:
+                if game['paths'][2]['title'] != comp:
+                    continue
                     
-                    prices = []
-                    results = []
-        
-                                      
-                    for team_key in ["homeTeam", "awayTeam"]:
-                        team = game.get(team_key, {})
-                        name = team.get("title")
-                        price = team.get("win", {}).get("price")
-                        
-                        results.append(name)
-                        prices.append(price)
-                    
-                    if sport == 'football':
-                        results.append('draw')
-                        prices.append(game['draw']['price'])
-                        
-                    match = " vs ".join(results[:2])
+            prices = []
+            results = []
+
+                              
+            for team_key in ["homeTeam", "awayTeam"]:
+                team = game.get(team_key, {})
+                name = team.get("title")
+                price = team.get("win", {}).get("price")
+                
+                results.append(name)
+                prices.append(price)
             
-                    # Store outcome-price pairs in dict
-                    win_market[match] = {res: price for res, price in zip(results, prices)}
+            if sport == 'football':
+                results.append('draw')
+                prices.append(game['draw']['price'])
+                
+            match = " vs ".join(results[:2])
+    
+            # Store outcome-price pairs in dict
+            win_market[match] = {res: price for res, price in zip(results, prices)}
                   
         return win_market
     
