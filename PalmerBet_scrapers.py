@@ -71,7 +71,7 @@ class PalmerBetSportsScraper:
                 results.append(name)
                 prices.append(price)
             
-            if sport == 'football':
+            if sport == 'football' and game['draw']:
                 results.append('draw')
                 prices.append(game['draw']['price'])
                 
