@@ -71,11 +71,11 @@ class PalmerBetSportsScraper:
                 results.append(name)
                 prices.append(price)
             
-                if sport == 'football':
-                    draw_data = game.get("draw")
-                    if draw_data:  # only add if it exists
-                        results.append("draw")
-                        prices.append(draw_data.get("price"))
+            if sport == 'football':
+                draw_data = game.get("draw")
+                if draw_data:  # only add if it exists
+                    results.append("draw")
+                    prices.append(draw_data.get("price"))
                 
             match = " vs ".join(results[:2])
     
