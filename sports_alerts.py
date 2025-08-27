@@ -248,7 +248,7 @@ async def main():
                 if f'{match_name} {chosen_date}' in sent_alerts:
                     continue  # Skip if alert already sent
                 
-            mkt_percent = group['mkt_percent'].iloc[0] * 100  
+            mkt_percent = group['mkt_percent'].iloc[0]
             
             outcomes = []
             for _, row in group.iterrows():
@@ -553,17 +553,17 @@ async def main():
 
     records = df_mapped.to_dict(orient="records")
     
-    logger.info(f"Upsert football to supabase")            
-    response = supabase.table("Football Odds").upsert(
-        records,
-        on_conflict="Match,Result" 
-    ).execute()
+    logger.info("Clearing Football Odds table before insert...")
+    supabase.table("Football Odds").delete().neq("Match", "").execute()
+    
+    logger.info("Inserting fresh Football Odds records...")
+    response = supabase.table("Football Odds").insert(records).execute()
         
     #print(football_df.head(60))
     print(football_mkt_percents[['match', 'mkt_percent']].sort_values(by='mkt_percent', ascending=True).head(10))
     
     logger.info(f"Send football discord alerts")            
-    football_arbs = football_mkt_percents[football_mkt_percents['mkt_percent'] < 1]
+    football_arbs = football_mkt_percents[football_mkt_percents['mkt_percent'] < 100]
     arb_alert(football_arbs)
     
     football_price_diffs = football_df[['result', 'match'] + price_cols]
@@ -741,16 +741,16 @@ async def main():
 
         records = df_mapped.to_dict(orient="records")
         
-        logger.info(f"Upsert union to supabase")            
-        response = supabase.table("Rugby Union Odds").upsert(
-            records,
-            on_conflict="Match,Result" 
-        ).execute()
+        logger.info("Clearing union Odds table before insert...")
+        supabase.table("Rugby Union Odds").delete().neq("Match", "").execute()
+        
+        logger.info("Inserting fresh union Odds records...")
+        response = supabase.table("Rugby Union Odds").insert(records).execute()
 
         print(union_mkt_percents[['match', 'mkt_percent']].head(10))
         
         logger.info(f"Send union discord alerts")            
-        union_arbs = union_mkt_percents[union_mkt_percents['mkt_percent'] < 1]
+        union_arbs = union_mkt_percents[union_mkt_percents['mkt_percent'] < 100]
         arb_alert(union_arbs)
         
         union_price_diffs = union_df[['result', 'match'] + price_cols]
@@ -859,18 +859,18 @@ async def main():
 
     records = df_mapped.to_dict(orient="records")
     
-    logger.info(f"Upsert nrl to supabase")            
-    response = supabase.table("NRL Odds").upsert(
-        records,
-        on_conflict="Match,Result" 
-    ).execute()
+    logger.info("Clearing NRL Odds table before insert...")
+    supabase.table("NRL Odds").delete().neq("Match", "").execute()
+    
+    logger.info("Inserting fresh NRL Odds records...")
+    response = supabase.table("NRL Odds").insert(records).execute()
     
     #print(nrl_df)
     #print(nrl_df.head(60))
     print(nrl_mkt_percents[['match', 'mkt_percent']].head(10))
     
     logger.info(f"Send NRL discord alerts")            
-    nrl_arbs = nrl_mkt_percents[nrl_mkt_percents['mkt_percent'] < 1]
+    nrl_arbs = nrl_mkt_percents[nrl_mkt_percents['mkt_percent'] < 100]
     arb_alert(nrl_arbs)
     
     nrl_price_diffs = nrl_df[['result', 'match'] + price_cols]
