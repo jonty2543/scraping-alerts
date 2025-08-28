@@ -252,7 +252,7 @@ async def main():
             
             outcomes = []
             for _, row in group.iterrows():
-                bookies = ", ".join(row['best_bookie'])
+                bookies = row['best_bookie'] if isinstance(row['best_bookie'], str) else ", ".join(row['best_bookie'])
                 outcomes.append(f"{row['result']} {row['best_price']}$ on {bookies}")
             
             # Join outcomes with commas and 'and' for the last item
@@ -418,6 +418,8 @@ async def main():
     SUPABASE_URL = "https://glrzwxpxkckxaogpkwmn.supabase.co"
     SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdscnp3eHB4a2NreGFvZ3Brd21uIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NjA3OTU3NiwiZXhwIjoyMDcxNjU1NTc2fQ.YOF9ryJbhBoKKHT0n4eZDMGrR9dczR8INHVs_By4vRU"
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    
+    
 
     
     # %% #---------Football--------#
