@@ -567,9 +567,9 @@ async def main():
     logger.info(f"Send football discord alerts")            
     football_arbs = football_mkt_percents[football_mkt_percents['mkt_percent'] < 100]
     arb_alert(football_arbs)
-    
+    '''
     football_price_diffs = football_df[['result', 'match'] + price_cols]
-    prob_alert(football_price_diffs, diff_lim=0.08)
+    prob_alert(football_price_diffs, diff_lim=0.08)'''
     
     #result_searcher(pb_football_df, 'Al Ahli Jeddah')
     #match_searcher(pb_football_df, 'Al-Nassr Riyadh v Al Ahli Jeddah')
@@ -754,9 +754,9 @@ async def main():
         logger.info(f"Send union discord alerts")            
         union_arbs = union_mkt_percents[union_mkt_percents['mkt_percent'] < 100]
         arb_alert(union_arbs)
-        
+        '''
         union_price_diffs = union_df[['result', 'match'] + price_cols]
-        prob_alert(union_price_diffs, diff_lim=0.06)
+        prob_alert(union_price_diffs, diff_lim=0.06)'''
             
         
     else:
@@ -874,9 +874,9 @@ async def main():
     logger.info(f"Send NRL discord alerts")            
     nrl_arbs = nrl_mkt_percents[nrl_mkt_percents['mkt_percent'] < 100]
     arb_alert(nrl_arbs)
-    
+    '''
     nrl_price_diffs = nrl_df[['result', 'match'] + price_cols]
-    prob_alert(nrl_price_diffs, diff_lim=0.06)
+    prob_alert(nrl_price_diffs, diff_lim=0.06)'''
     
 if __name__ == "__main__":
     asyncio.run(main())
