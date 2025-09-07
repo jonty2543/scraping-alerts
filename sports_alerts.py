@@ -712,7 +712,7 @@ async def main():
     
     logger.info(f"Scraping Unibet NRL Data")
     ub_scraper = ub.UBSportsScraper(get_ub_url('rugby_league'),  chosen_date=chosen_date)
-    ub_nrl_markets = await ub_scraper.UNIBET_scrape_nsport(comp='NRL')
+    ub_nrl_markets = await ub_scraper.UNIBET_scrape_sport(comp='NRL')
     
     logger.info(f"Scraping Palmersbet NRL Data")
     palm_scraper = palm.PalmerBetSportsScraper(palm_nrl_url,  chosen_date=chosen_date)
