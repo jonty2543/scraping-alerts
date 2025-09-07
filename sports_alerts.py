@@ -228,116 +228,8 @@ async def main():
         else:
             mkt_percents = pd.DataFrame(columns=['match', 'result', 'mkt_percent', 'best_price', 'best_bookie'])
     
-        return base_df, mkt_percentsdef fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=80, result_threshold=70, names=False):
-    
-        # Return empty if all dfs are empty
-        if all(df.empty for df in dfs):
-            return pd.DataFrame(columns=['match', 'result', 'mkt_percent', 'best_price', 'best_bookie']), pd.DataFrame()
-    
-        # Pick the base_df as the longest DataFrame (most rows)
-        non_empty_dfs = [(df, name) for df, name in zip(dfs, bookie_names) if not df.empty]
-        if not non_empty_dfs:
-            return pd.DataFrame(columns=['match', 'result', 'mkt_percent', 'best_price', 'best_bookie']), pd.DataFrame()
-    
-        base_df, base_bookie = max(non_empty_dfs, key=lambda x: len(x[0]))
-        base_df = base_df.copy()
-    
-        # Normalize base_df
-        if names:
-            base_df['match_norm'] = base_df['match'].apply(normalize_players_match)
-            base_df['result_norm'] = base_df['result'].apply(normalize_players_result)
-        else:
-            base_df['match_norm'] = base_df['match'].apply(normalize_match)
-            base_df['result_norm'] = base_df['result'].apply(normalize_result)
-    
-        base_df['match_fuzzy'] = base_df['match_norm']
-        base_df['result_fuzzy'] = base_df['result_norm']
-    
-        # Merge other DataFrames
-        for other_df, bookie in zip(dfs, bookie_names):
-            if bookie == base_bookie:  # skip base
-                continue
-    
-            if other_df.empty:
-                base_df[bookie] = 0.0
-                continue
-    
-            other_df = other_df.copy()
-    
-            # Normalize
-            if names:
-                other_df['match_norm'] = other_df['match'].apply(normalize_players_match)
-                other_df['result_norm'] = other_df['result'].apply(normalize_players_result)
-            else:
-                other_df['match_norm'] = other_df['match'].apply(normalize_match)
-                other_df['result_norm'] = other_df['result'].apply(normalize_result)
-    
-            # Fuzzy match matches
-            other_matches = other_df['match_norm'].dropna().unique()
-            match_map = {}
-            for base_mtch in base_df['match_fuzzy'].dropna().unique():
-                best_mtch = process.extractOne(base_mtch, other_matches, scorer=fuzz.token_sort_ratio)
-                if best_mtch and best_mtch[1] >= match_threshold:
-                    match_map[base_mtch] = best_mtch[0]
-    
-            other_df['match_fuzzy'] = other_df['match_norm'].map({v: k for k, v in match_map.items()})
-    
-            # Fuzzy match results
-            for base_mtch, other_mtch in match_map.items():
-                base_rows = base_df[base_df['match_fuzzy'] == base_mtch]
-                other_rows = other_df[other_df['match_norm'] == other_mtch]
-                result_map = {}
-                for res in base_rows['result_fuzzy'].dropna().unique():
-                    best_res = process.extractOne(res, other_rows['result_norm'].dropna().unique(),
-                                                 scorer=fuzz.token_sort_ratio)
-                    if best_res and best_res[1] >= result_threshold:
-                        result_map[res] = best_res[0]
-                other_df.loc[other_rows.index, 'result_fuzzy'] = other_rows['result_norm'].map(
-                    {v: k for k, v in result_map.items()}
-                )
-    
-            # Ensure columns exist
-            for col in ['match_fuzzy', 'result_fuzzy']:
-                if col not in other_df.columns:
-                    other_df[col] = None
-                other_df[col] = other_df[col].astype(str).replace('nan', '')
-    
-            base_df['match_fuzzy'] = base_df['match_fuzzy'].astype(str).replace('nan', '')
-            base_df['result_fuzzy'] = base_df['result_fuzzy'].astype(str).replace('nan', '')
-    
-            # Merge
-            if bookie in other_df.columns:
-                merge_cols = ['match_fuzzy', 'result_fuzzy', bookie]
-                base_df = base_df.merge(other_df[merge_cols], on=['match_fuzzy', 'result_fuzzy'], how='left')
-            else:
-                base_df[bookie] = 0.0
-    
-        # Ensure all bookie columns exist (for missing ones)
-        for bookie in bookie_names:
-            if bookie not in base_df.columns:
-                base_df[bookie] = 0.0
-    
-        # Best price / bookie
-        bookie_cols = [b for b in bookie_names if b in base_df.columns]
-        base_df['best_price'] = base_df[bookie_cols].max(axis=1, skipna=True)
-        base_df['best_bookie'] = base_df.apply(
-            lambda row: ', '.join([col for col in bookie_cols if row[col] == row['best_price']]), axis=1
-        )
-        base_df['best_prob'] = base_df['best_price'].apply(lambda x: 1 / x if pd.notnull(x) and x > 0 else 0.0)
-    
-        # Market %
-        if not base_df.empty:
-            match_mkt = base_df.groupby('match_fuzzy', as_index=False)['best_prob'].sum().rename(
-                columns={'best_prob': 'mkt_percent'}
-            )
-            mkt_percents = base_df.merge(match_mkt, on='match_fuzzy', how='left')
-            mkt_percents['mkt_percent'] = (mkt_percents['mkt_percent'] * 100).round(4)
-            mkt_percents = mkt_percents[['match', 'result', 'mkt_percent', 'best_price', 'best_bookie']]
-        else:
-            mkt_percents = pd.DataFrame(columns=['match', 'result', 'mkt_percent', 'best_price', 'best_bookie'])
-    
         return base_df, mkt_percents
-
+    
     def arb_alert(arbs, test=False):
         if not test:
             try:
@@ -496,6 +388,93 @@ async def main():
         
         return comp_dict
     
+    def process_odds(
+        bookmakers: dict,
+        price_cols: list,
+        table_name: str,
+        match_threshold: int = 80,
+        outcomes: int = 2,
+    ):
+        """
+        Process odds from multiple bookmakers, merge, calculate market %, 
+        insert into Supabase, and send arb alerts.
+        
+        Args:
+            bookmakers: dict of {bookmaker_name: markets_dict}
+            price_cols: list of bookmaker names (must match keys in bookmakers)
+            table_name: Supabase table to insert into
+            match_threshold: fuzzy match threshold for merging
+            outcomes: number of outcomes per market (e.g. 2 for MMA, 3 for soccer)
+        """
+        dfs = {}
+    
+        # Convert each bookmaker's markets into a DataFrame
+        for name, markets in bookmakers.items():
+            rows = []
+            for match, odds in markets.items():
+                for result, price in odds.items():
+                    rows.append({"match": match, "result": result, f"{name}": price})
+            dfs[name] = pd.DataFrame(rows)
+    
+        dfs_list = [dfs[name] for name in price_cols]
+    
+        logger.info(f"Merging {table_name} dfs")
+        merged_df, mkt_percents = fuzzy_merge_prices(
+            dfs_list, price_cols, match_threshold=match_threshold, outcomes=outcomes
+        )
+    
+        # Attach market %
+        merged_df = pd.merge(
+            merged_df,
+            mkt_percents[["match", "result", "mkt_percent"]],
+            on=["match", "result"],
+        )
+    
+        # Log coverage per bookmaker
+        for name in price_cols:
+            if len(dfs[name]) > 0:
+                logger.info(
+                    f"{name} matched: {merged_df[name].count() / len(dfs[name]):.2%}"
+                )
+    
+        # Cleanup + rename
+        col_map = {
+            "match": "Match",
+            "result": "Result",
+            "best_bookie": "Best Bookie",
+            "best_price": "Best Price",
+            "mkt_percent": "Market %",
+        }
+        col_map.update({name: name for name in price_cols})
+    
+        cleaned_df = merged_df.fillna(0.0)
+        df_mapped = cleaned_df.rename(columns=col_map)
+        df_mapped = df_mapped[[col for col in df_mapped.columns if col in col_map.values()]]
+        df_mapped["Best Bookie"] = df_mapped["Best Bookie"].apply(
+            lambda x: ", ".join(x) if isinstance(x, list) else str(x)
+        )
+        df_mapped["Market %"] = df_mapped["Market %"].round(4)
+    
+        # Convert to dict records
+        records = df_mapped.to_dict(orient="records")
+    
+        # Supabase insert
+        logger.info(f"Clearing {table_name} table before insert...")
+        supabase.table(table_name).delete().neq("Match", "").execute()
+    
+        logger.info(f"Inserting fresh {table_name} records...")
+        supabase.table(table_name).insert(records).execute()
+    
+        # Print some sample market %
+        print(mkt_percents[["match", "mkt_percent"]].head(10))
+    
+        # Arbitrage alerts
+        logger.info(f"Sending {table_name} arb alerts")
+        arbs = mkt_percents[mkt_percents["mkt_percent"] < 100]
+        arb_alert(arbs)
+    
+        return df_mapped, mkt_percents
+    
     def get_pb_url(competition_id: int):
         return f'https://api.au.pointsbet.com/api/mes/v3/events/featured/competition/{competition_id}?page=1'
     
@@ -605,83 +584,10 @@ async def main():
         # "Unibet": ub_football_markets
     }
     
-    dfs = {}
-    
-    # Build DataFrames
-    for name, markets in bookmakers.items():
-        rows = []
-        for match, odds in markets.items():
-            for result, price in odds.items():
-                rows.append({"match": match, "result": result, f"{name}": price})
-        dfs[name] = pd.DataFrame(rows)
-    
-    # Access individual DataFrames
-    sb_football_df = dfs["Sportsbet"]
-    pb_football_df = dfs["Pointsbet"]
-    palm_football_df = dfs["Palmerbet"]
-    # ub_football_df = dfs["Unibet"]
-    
-    # Combine into list
-    dfs = [sb_football_df, pb_football_df, palm_football_df]  # , ub_football_df]
-    
-    '''# Normalize results and matches
-    for df in dfs:
-        df['result_norm'] = df['result'].apply(normalize_result)
-        df['match_norm'] = df['match'].apply(normalize_match)'''
-    
     price_cols = ['Sportsbet', 'Pointsbet', 'Palmerbet']  # , 'Unibet']
     
-    logger.info(f"Merging Football Dfs")
-    football_df, football_mkt_percents = fuzzy_merge_prices(dfs, price_cols, outcomes=3)
-    football_df = pd.merge(
-        football_df,
-        football_mkt_percents[['match', 'result', 'mkt_percent']],
-        on=['result', 'match']
-    )
-    
-    if len(pb_football_df) > 0:
-        logger.info(f"Pointsbet football matched: {football_df['Pointsbet'].count() / len(pb_football_df)}")
-    
-    if len(palm_football_df) > 0:
-        logger.info(f"Palmerbet football matched: {football_df['Palmerbet'].count() / len(palm_football_df)}")
-    
-    col_map = {
-        "match": "Match",
-        "result": "Result",
-        "Sportsbet": "Sportsbet",
-        "Pointsbet": "Pointsbet",
-        "Palmerbet": "Palmerbet",
-        "best_bookie": "Best Bookie",
-        "best_price": "Best Price",
-        "mkt_percent": "Market %"
-    }
+    process_odds(bookmakers, price_cols, table_name="Football Odds", outcomes=3)
 
-    cleaned_df = football_df.fillna(0.0)
-    df_mapped = cleaned_df.rename(columns=col_map)
-    df_mapped = df_mapped[[col for col in df_mapped.columns if col in col_map.values()]]
-    df_mapped['Best Bookie'] = df_mapped['Best Bookie'].apply(lambda x: ', '.join(x) if isinstance(x, list) else str(x))
-    df_mapped['Market %'] = (df_mapped['Market %']).round(4)
-
-    records = df_mapped.to_dict(orient="records")
-    
-    logger.info("Clearing Football Odds table before insert...")
-    supabase.table("Football Odds").delete().neq("Match", "").execute()
-    
-    logger.info("Inserting fresh Football Odds records...")
-    response = supabase.table("Football Odds").insert(records).execute()
-        
-    #print(football_df.head(60))
-    print(football_mkt_percents[['match', 'mkt_percent']].sort_values(by='mkt_percent', ascending=True).head(10))
-    
-    logger.info(f"Send football discord alerts")            
-    football_arbs = football_mkt_percents[football_mkt_percents['mkt_percent'] < 100]
-    arb_alert(football_arbs)
-    '''
-    football_price_diffs = football_df[['result', 'match'] + price_cols]
-    prob_alert(football_price_diffs, diff_lim=0.08)'''
-    
-    #result_searcher(pb_football_df, 'Al Ahli Jeddah')
-    #match_searcher(pb_football_df, 'Al-Nassr Riyadh v Al Ahli Jeddah')
     
     
     # %% #---------Tennis--------#
@@ -787,90 +693,12 @@ async def main():
         "Betr": betr_union_markets  # Added Betr
     }
     
-    dfs = {}
-    
-    # Convert each bookmaker's markets into a DataFrame
-    for name, markets in bookmakers.items():
-        rows = []
-        for match, odds in markets.items():
-            for result, price in odds.items():
-                rows.append({"match": match, "result": result, f"{name}": price})
-        dfs[name] = pd.DataFrame(rows)
-    
-    # Access individual DataFrames
-    sb_union_df = dfs["Sportsbet"]
-    pb_union_df = dfs["Pointsbet"]
-    ub_union_df = dfs["Unibet"]
-    palm_union_df = dfs["Palmerbet"]
-    betr_union_df = dfs["Betr"]
-    
-    # List of DataFrames for merging
-    dfs_list = [sb_union_df, pb_union_df, ub_union_df, palm_union_df, betr_union_df]
     
     # Updated list of price columns for fuzzy_merge_prices
     price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betr']
     
-    logger.info(f"Merge union dfs")            
-    if any(len(df) > 0 for df in dfs_list):
-        logger.info("Merge union dfs")
-        
-        union_df, union_mkt_percents = fuzzy_merge_prices(dfs_list, price_cols, match_threshold=80, outcomes=2)
-        
-        # Merge market percentages
-        union_df = pd.merge(union_df, union_mkt_percents[['match', 'result', 'mkt_percent']], on=['match', 'result'])
-
-        if len(pb_union_df) > 0:
-            logger.info(f"Pointsbet union matched: {union_df['Pointsbet'].count() / len(pb_union_df)}")
-        
-        if len(ub_union_df) > 0:
-            logger.info(f"Unibet union matched: {union_df['Unibet'].count() / len(ub_union_df)}")
-        
-        if len(betr_union_df) > 0:
-            logger.info(f"Betr union matched: {union_df['Betr'].count() / len(betr_union_df)}")
-        
-        if len(palm_union_df) > 0:
-            logger.info(f"Palmerbet union matched: {union_df['Palmerbet'].count() / len(palm_union_df)}")
-
-        col_map = {
-            "match": "Match",
-            "result": "Result",
-            "Sportsbet": "Sportsbet",
-            "Pointsbet": "Pointsbet",
-            "Unibet": "Unibet",
-            "Palmerbet": "Palmerbet",
-            "Betr": "Betr",
-            "best_bookie": "Best Bookie",
-            "best_price": "Best Price",
-            "mkt_percent": "Market %"
-        }
-      
-        cleaned_df = union_df.fillna(0.0)
-        df_mapped = cleaned_df.rename(columns=col_map)
-        df_mapped = df_mapped[[col for col in df_mapped.columns if col in col_map.values()]]
-        df_mapped['Best Bookie'] = df_mapped['Best Bookie'].apply(lambda x: ', '.join(x) if isinstance(x, list) else str(x))
-        df_mapped['Market %'] = (df_mapped['Market %']).round(4)
-
-        records = df_mapped.to_dict(orient="records")
-        
-        logger.info("Clearing union Odds table before insert...")
-        supabase.table("Rugby Union Odds").delete().neq("Match", "").execute()
-        
-        logger.info("Inserting fresh union Odds records...")
-        response = supabase.table("Rugby Union Odds").insert(records).execute()
-
-        print(union_mkt_percents[['match', 'mkt_percent']].head(10))
-        
-        logger.info(f"Send union discord alerts")            
-        union_arbs = union_mkt_percents[union_mkt_percents['mkt_percent'] < 100]
-        arb_alert(union_arbs)
-        '''
-        union_price_diffs = union_df[['result', 'match'] + price_cols]
-        prob_alert(union_price_diffs, diff_lim=0.06)'''
-            
-        
-    else:
-        logger.info("No data in union dfs; skipping merge")
-        
+    process_odds(bookmakers, price_cols, table_name="Rugby Union Odds")
+    
     
     # %% #---------NRL--------#
     #get_sportsbet_compids(23)
@@ -903,95 +731,16 @@ async def main():
         "Betr": betr_nrl_markets  # Added Betr
     }
     
-    dfs = {}
-    
-    # Convert each bookmaker's markets into a DataFrame
-    for name, markets in bookmakers.items():
-        rows = []
-        for match, odds in markets.items():
-            for result, price in odds.items():
-                rows.append({"match": match, "result": result, f"{name}": price})
-        dfs[name] = pd.DataFrame(rows)
-    
-    # Access individual DataFrames
-    sb_nrl_df = dfs["Sportsbet"]
-    pb_nrl_df = dfs["Pointsbet"]
-    ub_nrl_df = dfs["Unibet"]
-    palm_nrl_df = dfs["Palmerbet"]
-    betr_nrl_df = dfs["Betr"]  # Added Betr
-    
-    #print(f'sb_nrl_df:{sb_nrl_df}')
-    #print(f'pb_nrl_df:{pb_nrl_df}')
-    #print(f'ub_nrl_df:{ub_nrl_df}')
-    #print(f'palm_nrl_df:{palm_nrl_df}')
-    #print(f'betr_nrl_df:{betr_nrl_df}')
-    
-    # List of DataFrames for merging
-    dfs_list = [sb_nrl_df, pb_nrl_df, ub_nrl_df, palm_nrl_df, betr_nrl_df]
-    
-    # Updated list of price columns for fuzzy_merge_prices
     price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betr']
-    
-    logger.info(f"Merge NRL dfs")            
-    nrl_df, nrl_mkt_percents = fuzzy_merge_prices(dfs_list, price_cols, match_threshold=80, outcomes=2)
-    
-    nrl_df = pd.merge(nrl_df, nrl_mkt_percents[['match', 'result', 'mkt_percent']], on=['match', 'result'])
 
-    if len(pb_nrl_df) > 0:
-        logger.info(f"Pointsbet nrl matched: {nrl_df['Pointsbet'].count() / len(pb_nrl_df)}")
+    process_odds(bookmakers, price_cols, table_name="NRL Odds")
     
-    if len(ub_nrl_df) > 0:
-        logger.info(f"Unibet nrl matched: {nrl_df['Unibet'].count() / len(ub_nrl_df)}")
-    
-    if len(betr_nrl_df) > 0:
-        logger.info(f"Betr nrl matched: {nrl_df['Betr'].count() / len(betr_nrl_df)}")
-    
-    if len(palm_nrl_df) > 0:
-        logger.info(f"Palmerbet nrl matched: {nrl_df['Palmerbet'].count() / len(palm_nrl_df)}")
-
-    col_map = {
-        "match": "Match",
-        "result": "Result",
-        "Sportsbet": "Sportsbet",
-        "Pointsbet": "Pointsbet",
-        "Unibet": "Unibet",
-        "Palmerbet": "Palmerbet",
-        "Betr": "Betr",
-        "best_bookie": "Best Bookie",
-        "best_price": "Best Price",
-        "mkt_percent": "Market %"
-    }
-
-    cleaned_df = nrl_df.fillna(0.0)
-    df_mapped = cleaned_df.rename(columns=col_map)
-    df_mapped = df_mapped[[col for col in df_mapped.columns if col in col_map.values()]]
-    df_mapped['Best Bookie'] = df_mapped['Best Bookie'].apply(lambda x: ', '.join(x) if isinstance(x, list) else str(x))
-    df_mapped['Market %'] = (df_mapped['Market %']).round(4)
-
-    records = df_mapped.to_dict(orient="records")
-    
-    logger.info("Clearing NRL Odds table before insert...")
-    supabase.table("NRL Odds").delete().neq("Match", "").execute()
-    
-    logger.info("Inserting fresh NRL Odds records...")
-    response = supabase.table("NRL Odds").insert(records).execute()
-    
-    #print(nrl_df)
-    #print(nrl_df.head(60))
-    print(nrl_mkt_percents[['match', 'mkt_percent']].head(10))
-    
-    logger.info(f"Send NRL discord alerts")            
-    nrl_arbs = nrl_mkt_percents[nrl_mkt_percents['mkt_percent'] < 100]
-    arb_alert(nrl_arbs)
-    '''
-    nrl_price_diffs = nrl_df[['result', 'match'] + price_cols]
-    prob_alert(nrl_price_diffs, diff_lim=0.06)'''
     
     #%% E-sports
-    
+    '''
     logger.info(f"Scraping Sportsbet E Sports Data")
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=206),  chosen_date=chosen_date)
-    sb_esports_markets = await sb_scraper.SPORTSBET_scraper()
+    sb_esports_markets = await sb_scraper.SPORTSBET_scraper()'''
     
     pb_esports_compids = get_pb_comps('e-sports')  
     pb_esports_markets = {}   
@@ -1007,86 +756,21 @@ async def main():
     
     # --- Combine bookmaker markets ---
     bookmakers = {
+        #"Sportsbet": sb_esports_markets,
         "Pointsbet": pb_esports_markets,
         "Unibet": ub_esports_markets
     }
     
-    dfs = {}
+    price_cols = [ "Pointsbet", "Unibet"]
     
-    # Convert each bookmaker's markets into a DataFrame
-    for name, markets in bookmakers.items():
-        rows = []
-        for match, odds in markets.items():
-            for result, price in odds.items():
-                rows.append({"match": match, "result": result, f"{name}": price})
-        dfs[name] = pd.DataFrame(rows)
-    
-    # Access individual DataFrames
-    pb_esports_df = dfs["Pointsbet"]
-    ub_esports_df = dfs["Unibet"]
-    
-    # List of DataFrames for merging
-    dfs_list = [pb_esports_df, ub_esports_df]
-    
-    # Updated list of price columns for fuzzy_merge_prices
-    price_cols = ["Pointsbet", "Unibet"]
-    
-    logger.info("Merge Esports dfs")
-    esports_df, esports_mkt_percents = fuzzy_merge_prices(
-        dfs_list, price_cols, match_threshold=50, outcomes=2
-    )
-    
-    esports_df = pd.merge(
-        esports_df,
-        esports_mkt_percents[["match", "result", "mkt_percent"]],
-        on=["match", "result"]
-    )
-    
-    if len(pb_esports_df) > 0:
-        logger.info(f"Pointsbet esports matched: {esports_df['Pointsbet'].count() / len(pb_esports_df)}")
-    
-    if len(ub_esports_df) > 0:
-        logger.info(f"Unibet esports matched: {esports_df['Unibet'].count() / len(ub_esports_df)}")
-    
-    col_map = {
-        "match": "Match",
-        "result": "Result",
-        "Pointsbet": "Pointsbet",
-        "Unibet": "Unibet",
-        "best_bookie": "Best Bookie",
-        "best_price": "Best Price",
-        "mkt_percent": "Market %"
-    }
-    
-    cleaned_df = esports_df.fillna(0.0)
-    df_mapped = cleaned_df.rename(columns=col_map)
-    df_mapped = df_mapped[[col for col in df_mapped.columns if col in col_map.values()]]
-    df_mapped["Best Bookie"] = df_mapped["Best Bookie"].apply(lambda x: ", ".join(x) if isinstance(x, list) else str(x))
-    df_mapped["Market %"] = df_mapped["Market %"].round(4)
-    
-    records = df_mapped.to_dict(orient="records")
-    
-    logger.info("Clearing Esports Odds table before insert...")
-    supabase.table("Esports Odds").delete().neq("Match", "").execute()
-    
-    logger.info("Inserting fresh Esports Odds records...")
-    response = supabase.table("Esports Odds").insert(records).execute()
-    
-    print(esports_mkt_percents[["match", "mkt_percent"]].head(10))
-    
-    logger.info("Send Esports discord alerts")
-    esports_arbs = esports_mkt_percents[esports_mkt_percents["mkt_percent"] < 100]
-    arb_alert(esports_arbs)
-    
-    #esports_price_diffs = esports_df[['result', 'match'] + price_cols]
-    #prob_alert(esports_price_diffs, diff_lim=0.06)
+    process_odds(bookmakers, price_cols, table_name="E-Sports Odds")
     
     
-    #%% UFC
-    
+    #%% mma
+    '''
     logger.info(f"Scraping Sportsbet UFC Data")
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=71),  chosen_date=chosen_date)
-    sb_ufc_markets = await sb_scraper.SPORTSBET_scraper()
+    sb_mma_markets = await sb_scraper.SPORTSBET_scraper()'''
     
     pb_mma_compids = get_pb_comps('mma')  
     pb_mma_markets = {}   
@@ -1096,90 +780,25 @@ async def main():
         comp_markets = await pb_scraper.POINTSBET_scrape_sport(market_type='Fight Result')
         pb_mma_markets.update(comp_markets)
         
-    logger.info(f"Scraping Unibet UFC Data")
+    logger.info(f"Scraping Unibet mma Data")
     ub_scraper = ub.UBSportsScraper(get_ub_url('ufc_mma'),  chosen_date=chosen_date)
-    ub_ufc_markets = await ub_scraper.UNIBET_scrape_sport()
+    ub_mma_markets = await ub_scraper.UNIBET_scrape_sport()
     
     # --- Combine bookmaker markets ---
     bookmakers = {
+        #"Sportsbet": sb_mma_markets,
         "Pointsbet": pb_mma_markets,
-        "Unibet": ub_ufc_markets
+        "Unibet": ub_mma_markets
     }
     
-    dfs = {}
-    
-    # Convert each bookmaker's markets into a DataFrame
-    for name, markets in bookmakers.items():
-        rows = []
-        for match, odds in markets.items():
-            for result, price in odds.items():
-                rows.append({"match": match, "result": result, f"{name}": price})
-        dfs[name] = pd.DataFrame(rows)
-    
-    # Access individual DataFrames
-    pb_ufc_df = dfs["Pointsbet"]
-    ub_ufc_df = dfs["Unibet"]
-    
-    # List of DataFrames for merging
-    dfs_list = [pb_ufc_df, ub_ufc_df]
-    
-    # Updated list of price columns for fuzzy_merge_prices
     price_cols = ["Pointsbet", "Unibet"]
     
-    logger.info("Merge ufc dfs")
-    ufc_df, ufc_mkt_percents = fuzzy_merge_prices(
-        dfs_list, price_cols, match_threshold=50, outcomes=2
-    )
-    
-    ufc_df = pd.merge(
-        ufc_df,
-        ufc_mkt_percents[["match", "result", "mkt_percent"]],
-        on=["match", "result"]
-    )
-    
-    if len(pb_ufc_df) > 0:
-        logger.info(f"Pointsbet ufc matched: {ufc_df['Pointsbet'].count() / len(pb_ufc_df)}")
-    
-    if len(ub_ufc_df) > 0:
-        logger.info(f"Unibet ufc matched: {ufc_df['Unibet'].count() / len(ub_ufc_df)}")
-    
-    col_map = {
-        "match": "Match",
-        "result": "Result",
-        "Pointsbet": "Pointsbet",
-        "Unibet": "Unibet",
-        "best_bookie": "Best Bookie",
-        "best_price": "Best Price",
-        "mkt_percent": "Market %"
-    }
-    
-    cleaned_df = ufc_df.fillna(0.0)
-    df_mapped = cleaned_df.rename(columns=col_map)
-    df_mapped = df_mapped[[col for col in df_mapped.columns if col in col_map.values()]]
-    df_mapped["Best Bookie"] = df_mapped["Best Bookie"].apply(lambda x: ", ".join(x) if isinstance(x, list) else str(x))
-    df_mapped["Market %"] = df_mapped["Market %"].round(4)
-    
-    records = df_mapped.to_dict(orient="records")
-    
-    logger.info("Clearing ufc Odds table before insert...")
-    supabase.table("ufc Odds").delete().neq("Match", "").execute()
-    
-    logger.info("Inserting fresh ufc Odds records...")
-    response = supabase.table("ufc Odds").insert(records).execute()
-    
-    print(ufc_mkt_percents[["match", "mkt_percent"]].head(10))
-    
-    logger.info("Send ufc discord alerts")
-    ufc_arbs = ufc_mkt_percents[ufc_mkt_percents["mkt_percent"] < 100]
-    arb_alert(ufc_arbs)
-    
-    #ufc_price_diffs = ufc_df[['result', 'match'] + price_cols]
-    #prob_alert(esports_price_diffs, diff_lim=0.06)
+    process_odds(bookmakers, price_cols, table_name="MMA Odds")
     
     
     
     #%% Basketball
-    
+    '''
     logger.info(f"Scraping Sportsbet Basketball Data")
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=16),  chosen_date=chosen_date)
     sb_basketball_markets = await sb_scraper.SPORTSBET_scraper()
@@ -1191,7 +810,7 @@ async def main():
         pb_scraper = pb.PBSportsScraper(get_pb_url(comp_id),  chosen_date=chosen_date)
         comp_markets = await pb_scraper.POINTSBET_scrape_nrl(market_type='Head to Head')
         pb_basketball_markets.update(comp_markets)
-    
+    '''
     
 if __name__ == "__main__":
     asyncio.run(main())
