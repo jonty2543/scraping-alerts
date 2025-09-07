@@ -193,9 +193,9 @@ class UBSportsScraper:
 
         return win_market
     
-    async def UNIBET_scrape_nrl(self, comp):
+    async def UNIBET_scrape_sport(self, comp=None):
         """
-        football Unibet Scraper.
+        General sport Unibet Scraper.
         """
         # Input checking
         
@@ -225,30 +225,40 @@ class UBSportsScraper:
             logger.error(f"Unexpected JSON structure from Unibet: {e}")
             return win_market
 
-        for group in groups:
-            
-            if group['name'] != comp:
-                continue
-            
-            for comp in group.get("events", []):
+        def process_events(events, win_market):
+            for comp in events:
                 event = comp.get("event", {})
                 match_name = event.get("englishName") or event.get("name")
-
+        
                 if not match_name:
                     continue
-
+        
                 win_market.setdefault(match_name, {})
-
+        
                 for bet_offer in comp.get("betOffers", []):
                     bet_type = bet_offer.get("betOfferType", {}).get("englishName", "")
                     if bet_type.lower() == "match":  # Match odds only
                         for outcome in bet_offer.get("outcomes", []):
-                            team = outcome.get("participant")
+                            team = outcome.get("participant") or outcome.get("englishLabel") or ""
                             odds = outcome.get("oddsDecimal")
                             try:
                                 win_market[match_name][team] = float(odds)
                             except (TypeError, ValueError):
                                 win_market[match_name][team] = None
+        
+        
+        for group in groups:
+            if comp and group.get("name") != comp:
+                continue
+        
+            # Case 1: group has subGroups
+            if group.get("subGroups"):
+                for subgroup in group["subGroups"]:
+                    process_events(subgroup.get("events", []), win_market)
+        
+            # Case 2: group has no subGroups
+            else:
+                process_events(group.get("events", []), win_market)
 
         return win_market
     

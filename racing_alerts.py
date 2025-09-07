@@ -1,5 +1,5 @@
 import pytz
-from datetime import datetime
+from datetime import datetime, timedelta
 from loguru import logger
 import sportsbet_scrapers as sb
 import asyncio
@@ -9,6 +9,7 @@ nest_asyncio.apply()
 async def main():
     
     chosen_date = datetime.now(pytz.timezone("Australia/Brisbane")).date().strftime("%Y-%m-%d")
+    two_days = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(2)).date().strftime("%Y-%m-%d")
     print(chosen_date)
 
     sb_url = f"https://www.sportsbet.com.au/apigw/sportsbook-racing/Sportsbook/Racing/AllRacing/{chosen_date}"
@@ -18,7 +19,7 @@ async def main():
         price_modes = ['win']
         for mode in price_modes:
             sb_markets_dict = {}
-            runners = {}
+            sb_runners = {}
             
             logger.info(f"Scraping Sportsbet {racing_code} Data")
             sb_scraper = sb.SBRacingScraper(sb_url, racing_code, chosen_date)
@@ -33,7 +34,11 @@ async def main():
             for market in sb_market_names:
                 for key, value in zip(sb_markets_dict[racing_code][market]['runners'].keys(),
                                     sb_markets_dict[racing_code][market]['runners'].values()):
-                    runners[key] = {'market': market, 'name': key, 'price': value}
+                    sb_runners[key] = {'market': market, 'name': key, 'price': value}
+                    
+    pb_url = f'https://api.au.pointsbet.com/api/racing/v4/meetings?startDate={chosen_date}T10:00:00.000Z&endDate={two_days}T10:00:00.000Z'
+
+     
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -89,7 +89,7 @@ class SBRacingScraper:
                 meeting_name = market["name"]
                 # Loop through the races for each meeting
                 for event in market["events"]:
-                    if (event['type'] in self.race_code) and (event['category'] == 'standard') and (event["regionGroup"] == "Aus/NZ"):
+                    if (event['type'] in self.race_code) and (event['category'] == 'standard') and (event["regionGroup"] == "Aus/NZ") and (event["statusCode"] != 'R'):
                         markets_present = True
                         total_markets_count += 1
 
