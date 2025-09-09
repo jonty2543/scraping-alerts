@@ -17,6 +17,7 @@ from functools import reduce
 import re
 import unidecode
 from supabase import create_client, Client
+import inspect
 
 
 nest_asyncio.apply()
@@ -345,7 +346,7 @@ async def main():
                           "Chrome/115.0.0.0 Safari/537.36",
             "Accept": "application/json",
         }
-        
+
         response = requests.get(pb_comps_url, headers=headers)
         
         if response.status_code == 200:
@@ -470,7 +471,7 @@ async def main():
     
         # Arbitrage alerts
         logger.info(f"Sending {table_name} arb alerts")
-        arbs = mkt_percents[mkt_percents["mkt_percent"] < 100]
+        arbs = mkt_percents[(mkt_percents["mkt_percent"] > 90) & (mkt_percents["mkt_percent"] < 100)]
         arb_alert(arbs)
     
         return df_mapped, mkt_percents
@@ -497,6 +498,7 @@ async def main():
     
     betr_union_url = 'https://web20-api.bluebet.com.au/MasterCategory?EventTypeId=105&WithLevelledMarkets=true'
     betr_nrl_url = 'https://web20-api.bluebet.com.au/MasterCategory?EventTypeId=102&WithLevelledMarkets=true'
+    betr_mma_url = 'https://web20-api.bluebet.com.au/MasterCategory?EventTypeId=128&WithLevelledMarkets=true'
     
     WEBHOOK_ARBS = "https://discord.com/api/webhooks/1407711750824132620/dBAZkjoBIHPV-vUNk7C0E4MJ7nUtF1BKd4O1lpHhq_4qbk-47kew9bFmRiSpELAqk6i4"  
     WEBHOOK_PROBS = "https://discord.com/api/webhooks/1408080883885539439/bAnj7a_NBVxFyXecCMTBw84obdX4OMuO1388GDNfo1ViW4Kmylb0Gc5bITjrfiEOwRNc"  
@@ -511,48 +513,6 @@ async def main():
 
     
     # %% #---------Football--------#
-    '''
-    logger.info(f"Scraping Pointsbet EPL Data")
-    pb_scraper = pb.PBSportsScraper(get_pb_url(136535),  chosen_date=chosen_date)
-    pb_epl_markets = await pb_scraper.POINTSBET_scrape_sport(market_type='Match Result')
-    
-    logger.info(f"Scraping Sportsbet EPL Data")
-    sb_scraper = sb.SBSportsScraper(get_sportsbet_url(29),  chosen_date=chosen_date)
-    sb_epl_markets = await sb_scraper.SPORTSBET_scraper(competition_id=718)
-    
-    #EPL df
-    
-    bookmakers = {
-        "Sportsbet": sb_epl_markets,
-        "Pointsbet": pb_epl_markets,
-    }
-    
-    dfs = {}
-    
-    for name, markets in bookmakers.items():
-        rows = []
-        for match, odds in markets.items():
-            for result, price in odds.items():
-                rows.append({"match": match, "result": result, f"{name}": price})
-        dfs[name] = pd.DataFrame(rows)
-    
-    # Access them like:
-    sb_epl_df = dfs["Sportsbet"]
-    pb_epl_df = dfs["Pointsbet"]
-        
-    dfs = [sb_epl_df, pb_epl_df]
-    price_cols = ['Sportsbet', 'Pointsbet']
-    
-    epl_df, epl_mkt_percents = fuzzy_merge_prices(dfs, price_cols, outcomes=3)
-
-    print(epl_mkt_percents.head(60))
-    print(epl_df)
-    
-    epl_arbs = epl_mkt_percents[epl_mkt_percents['mkt_percent'] < 1]
-    arb_alert(epl_arbs)
-    
-    epl_price_diffs = epl_df[['result', 'match'] + price_cols]
-    prob_alert(epl_price_diffs, diff_lim=0.01, test=True)'''
     
     pb_football_compids = get_pb_comps('soccer')           
         
@@ -614,46 +574,7 @@ async def main():
         "Pointsbet": pb_tennis_markets,
         "Unibet": ub_tennis_markets
     }
-    
-    dfs = {}
-    
-    for name, markets in bookmakers.items():
-        rows = []
-        for match, odds in markets.items():
-            for result, price in odds.items():
-                rows.append({"match": match, "result": result, f"{name}": price})
-        dfs[name] = pd.DataFrame(rows)
-    
-    # Access them like:
-    sb_tennis_df = dfs["Sportsbet"]
-    pb_tennis_df = dfs["Pointsbet"]
-    ub_tennis_df = dfs["Unibet"]
-    
-    dfs = [sb_tennis_df, pb_tennis_df, ub_tennis_df]
-
-    for df in dfs:
-        # Normalize results
-        df['result_norm'] = df['result'].apply(normalize_players_result)
-        # Normalize matches
-        df['match_norm'] = df['match'].apply(normalize_players_match)
-    
-    print(f"sb_tennis_df:{sb_tennis_df[['match_norm', 'result_norm']].head(50)}")
-    print(f"pb_tennis_df:{pb_tennis_df[['match_norm', 'result_norm']].head(50)}")
-    print(f"ub_tennis_df:{ub_tennis_df[['match_norm', 'result_norm']].head(50)}")
-    
-    
-    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet']
-                
-    tennis_df, tennis_mkt_percents = fuzzy_merge_prices(dfs, price_cols, outcomes=2, match_threshold=80, result_threshold=50, names=True)
-    
-    #print(tennis_df.head(60))
-    #print(tennis_mkt_percents.sort_values(by='mkt_percent', ascending=True).head(60))
-    
-    #tennis_arbs = tennis_mkt_percents[tennis_mkt_percents['mkt_percent'] < 1]
-    #arb_alert(tennis_arbs)
-    
-    #tennis_price_diffs = tennis_df[['result', 'match'] + price_cols]
-    #prob_alert(tennis_price_diffs, diff_lim=0.07, test=True)'''
+    '''
     
     
     
@@ -714,7 +635,7 @@ async def main():
     ub_scraper = ub.UBSportsScraper(get_ub_url('rugby_league'),  chosen_date=chosen_date)
     ub_nrl_markets = await ub_scraper.UNIBET_scrape_sport(comp='NRL')
     
-    logger.info(f"Scraping Palmersbet NRL Data")
+    logger.info(f"Scraping Palmerbet NRL Data")
     palm_scraper = palm.PalmerBetSportsScraper(palm_nrl_url,  chosen_date=chosen_date)
     palm_nrl_markets = await palm_scraper.PalmerBet_scrape(comp='Australia National Rugby League')
     
@@ -737,10 +658,10 @@ async def main():
     
     
     #%% E-sports
-    '''
+    
     logger.info(f"Scraping Sportsbet E Sports Data")
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=206),  chosen_date=chosen_date)
-    sb_esports_markets = await sb_scraper.SPORTSBET_scraper()'''
+    sb_esports_markets = await sb_scraper.SPORTSBET_scraper()
     
     pb_esports_compids = get_pb_comps('e-sports')  
     pb_esports_markets = {}   
@@ -750,27 +671,27 @@ async def main():
         comp_markets = await pb_scraper.POINTSBET_scrape_sport(market_type='Match Result')
         pb_esports_markets.update(comp_markets)
         
-    logger.info(f"Scraping Unibet Esports Data")
+    logger.info(f"Scraping Unibet E sports Data")
     ub_scraper = ub.UBSportsScraper(get_ub_url('esports'),  chosen_date=chosen_date)
     ub_esports_markets = await ub_scraper.UNIBET_scrape_sport()
     
     # --- Combine bookmaker markets ---
     bookmakers = {
-        #"Sportsbet": sb_esports_markets,
+        "Sportsbet": sb_esports_markets,
         "Pointsbet": pb_esports_markets,
         "Unibet": ub_esports_markets
     }
     
-    price_cols = [ "Pointsbet", "Unibet"]
+    price_cols = ["Sportsbet", "Pointsbet", "Unibet"]
     
     process_odds(bookmakers, price_cols, table_name="E-Sports Odds")
     
     
     #%% mma
-    '''
+    
     logger.info(f"Scraping Sportsbet UFC Data")
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=71),  chosen_date=chosen_date)
-    sb_mma_markets = await sb_scraper.SPORTSBET_scraper()'''
+    sb_mma_markets = await sb_scraper.SPORTSBET_scraper()
     
     pb_mma_compids = get_pb_comps('mma')  
     pb_mma_markets = {}   
@@ -786,12 +707,12 @@ async def main():
     
     # --- Combine bookmaker markets ---
     bookmakers = {
-        #"Sportsbet": sb_mma_markets,
+        "Sportsbet": sb_mma_markets,
         "Pointsbet": pb_mma_markets,
         "Unibet": ub_mma_markets
     }
     
-    price_cols = ["Pointsbet", "Unibet"]
+    price_cols = ["Sportsbet", "Pointsbet", "Unibet"]
     
     process_odds(bookmakers, price_cols, table_name="MMA Odds")
     
