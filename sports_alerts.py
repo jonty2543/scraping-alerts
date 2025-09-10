@@ -430,7 +430,9 @@ async def main():
             mkt_percents[["match", "result", "mkt_percent"]],
             on=["match", "result"],
         )
-    
+        merged_df = merged_df[merged_df["mkt_percent"] > 80]
+
+        
         # Log coverage per bookmaker
         for name in price_cols:
             if len(dfs[name]) > 0:
@@ -605,7 +607,9 @@ async def main():
     betr_scraper = betr.BetrSportsScraper(betr_union_url,  chosen_date=chosen_date)
     betr_union_markets = await betr_scraper.Betr_scrape_union()
     
-        
+    logger.info("Fetching union model odds")    
+    
+    
     bookmakers = {
         "Sportsbet": sb_union_markets,
         "Pointsbet": pb_union_markets,
