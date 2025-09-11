@@ -18,7 +18,7 @@ import re
 import unidecode
 from supabase import create_client, Client
 import inspect
-
+import time
 
 nest_asyncio.apply()
 
@@ -524,10 +524,15 @@ async def main():
         pb_scraper = pb.PBSportsScraper(get_pb_url(comp_id),  chosen_date=chosen_date)
         comp_markets = await pb_scraper.POINTSBET_scrape_sport(market_type='Match Result')
         pb_football_markets.update(comp_markets)
+        
+    time.sleep(5)
     
     logger.info(f"Scraping Sportsbet Football Data")
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(29),  chosen_date=chosen_date)
     sb_football_markets = await sb_scraper.SPORTSBET_scraper()
+    
+    time.sleep(5)
+    
     '''
     logger.info(f"Scraping Unibet football Data")
     ub_scraper = ub.UBSportsScraper(get_ub_url('football'),  chosen_date=chosen_date)
@@ -537,6 +542,7 @@ async def main():
     palm_scraper = palm.PalmerBetSportsScraper(palm_football_url,  chosen_date=chosen_date)
     palm_football_markets = await palm_scraper.PalmerBet_scrape(comp=None, sport='football')
     
+    time.sleep(5)
         
     # Football df
     bookmakers = {
@@ -587,9 +593,13 @@ async def main():
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=12),  chosen_date=chosen_date)
     sb_union_markets = await sb_scraper.SPORTSBET_scraper_union()
     
+    time.sleep(5)
+    
     logger.info(f"Scraping Unibet union Data")
     ub_scraper = ub.UBSportsScraper(get_ub_url('rugby_union'),  chosen_date=chosen_date)
     ub_union_markets = await ub_scraper.UNIBET_scrape_union()
+    
+    time.sleep(5)
     
     pb_union_compids = get_pb_comps('rugby-union')  
     pb_union_markets = {}   
@@ -598,14 +608,20 @@ async def main():
         pb_scraper = pb.PBSportsScraper(get_pb_url(comp_id),  chosen_date=chosen_date)
         comp_markets = await pb_scraper.POINTSBET_scrape_union(market_type='Head to Head')
         pb_union_markets.update(comp_markets)
+        
+    time.sleep(5)
     
     logger.info(f"Scraping Palmersbet union Data")
     palm_scraper = palm.PalmerBetSportsScraper(palm_union_url,  chosen_date=chosen_date)
     palm_union_markets = await palm_scraper.PalmerBet_scrape()
     
+    time.sleep(5)
+    
     logger.info(f"Scraping Betr union Data")
     betr_scraper = betr.BetrSportsScraper(betr_union_url,  chosen_date=chosen_date)
     betr_union_markets = await betr_scraper.Betr_scrape_union()
+    
+    time.sleep(5)
     
     logger.info("Fetching union model odds")    
     
@@ -631,21 +647,31 @@ async def main():
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=23),  chosen_date=chosen_date)
     sb_nrl_markets = await sb_scraper.SPORTSBET_scraper(competition_id=3436)
     
+    time.sleep(5)
+    
     logger.info(f"Scraping Pointsbet NRL Data")
     pb_scraper = pb.PBSportsScraper(pb_nrl_url,  chosen_date=chosen_date)
     pb_nrl_markets = await pb_scraper.POINTSBET_scrape_nrl(market_type='Match Result')
+    
+    time.sleep(5)
     
     logger.info(f"Scraping Unibet NRL Data")
     ub_scraper = ub.UBSportsScraper(get_ub_url('rugby_league'),  chosen_date=chosen_date)
     ub_nrl_markets = await ub_scraper.UNIBET_scrape_sport(comp='NRL')
     
+    time.sleep(5)
+    
     logger.info(f"Scraping Palmerbet NRL Data")
     palm_scraper = palm.PalmerBetSportsScraper(palm_nrl_url,  chosen_date=chosen_date)
     palm_nrl_markets = await palm_scraper.PalmerBet_scrape(comp='Australia National Rugby League')
     
+    time.sleep(5)
+    
     logger.info(f"Scraping Betr NRL Data")
     betr_scraper = betr.BetrSportsScraper(betr_nrl_url,  chosen_date=chosen_date)
     betr_nrl_markets = await betr_scraper.Betr_scrape_union(comp='NRL Telstra Premiership')
+    
+    time.sleep(5)
     
     # --- Combine bookmaker markets ---
     bookmakers = {
@@ -667,6 +693,8 @@ async def main():
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=206),  chosen_date=chosen_date)
     sb_esports_markets = await sb_scraper.SPORTSBET_scraper()
     
+    time.sleep(5)
+    
     pb_esports_compids = get_pb_comps('e-sports')  
     pb_esports_markets = {}   
     logger.info(f"Scraping Pointsbet E sports Data")
@@ -675,9 +703,13 @@ async def main():
         comp_markets = await pb_scraper.POINTSBET_scrape_sport(market_type='Match Result')
         pb_esports_markets.update(comp_markets)
         
+    time.sleep(5)
+        
     logger.info(f"Scraping Unibet E sports Data")
     ub_scraper = ub.UBSportsScraper(get_ub_url('esports'),  chosen_date=chosen_date)
     ub_esports_markets = await ub_scraper.UNIBET_scrape_sport()
+    
+    time.sleep(5)
     
     # --- Combine bookmaker markets ---
     bookmakers = {
@@ -697,6 +729,8 @@ async def main():
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=71),  chosen_date=chosen_date)
     sb_mma_markets = await sb_scraper.SPORTSBET_scraper()
     
+    time.sleep(5)
+    
     pb_mma_compids = get_pb_comps('mma')  
     pb_mma_markets = {}   
     logger.info(f"Scraping Pointsbet MMA Data")
@@ -705,9 +739,13 @@ async def main():
         comp_markets = await pb_scraper.POINTSBET_scrape_sport(market_type='Fight Result')
         pb_mma_markets.update(comp_markets)
         
+    time.sleep(5)
+        
     logger.info(f"Scraping Unibet mma Data")
     ub_scraper = ub.UBSportsScraper(get_ub_url('ufc_mma'),  chosen_date=chosen_date)
     ub_mma_markets = await ub_scraper.UNIBET_scrape_sport()
+    
+    time.sleep(5)
     
     # --- Combine bookmaker markets ---
     bookmakers = {
