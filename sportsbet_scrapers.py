@@ -268,3 +268,54 @@ class SBSportsScraper:
     
             await browser.close()
             return draw_no_bet_markets
+        
+        
+    async def SPORTSBET_scrape_mma(self, competition_id='none', retries=3, delay=2):
+        """
+        MMA Sportsbet Scraper.
+        """
+        # Input checking
+
+        async with async_playwright() as p:
+            # Stealth Browser Set Up to Access Sportsbet API (Not Needed but just copied over from TAB)
+            browser = await p.chromium.launch(headless=True)
+            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
+            page = await browser.new_page(user_agent=ua)
+
+            await page.goto(self.url)
+
+            all_comps = await page.evaluate(f"() => fetch('{self.url}').then(response => response.json())")
+            if not all_comps:
+                logger.error("Failed to fetch markets")
+                await browser.close()
+                                        
+            win_market = {}
+                
+            for comp in all_comps:
+                
+                if competition_id != 'none':
+                    if comp.get("id") != competition_id:
+                        continue
+                    
+                for event in comp.get("events"):
+                    
+                    event_name = event['name']
+                    
+                    for market in event.get("marketList"):
+                        if market.get("name") != 'Match Betting':
+                            continue
+                    
+                        prices = []
+                        results = []
+                        
+                        for selection in market.get("selections"):
+                            result = selection['name']
+                            price = selection['price']['winPrice']
+                            results.append(result)
+                            prices.append(price)
+                        
+                        win_market[event_name] = {
+                            result: price for result, price in zip(results, prices)
+                        }
+                    
+        return win_market

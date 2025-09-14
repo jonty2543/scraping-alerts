@@ -369,6 +369,8 @@ async def main():
     def get_sportsbet_url(sportId: int):
         return f'https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Events?primaryMarketOnly=true&fromDate={chosen_date}T00:00:00&toDate={one_week}T23:59:59&sportsId={sportId}&numEventsPerClass=2000&detailsLevel=O'
     
+    sb_ufc_url = 'https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Class/71/Events?displayType=coupon&detailsLevel=O'
+    
     def get_sportsbet_compids(sportId: int):
         url = get_sportsbet_url(sportId)
         
@@ -608,7 +610,7 @@ async def main():
     '''
     
     
-    
+    (1/2.31)*2.3 + ((1-1/2.31)*-1)
    
     
     # %% #---------union--------#
@@ -750,8 +752,8 @@ async def main():
     #%% mma
     
     logger.info(f"Scraping Sportsbet UFC Data")
-    sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=71),  chosen_date=chosen_date)
-    sb_mma_markets = await sb_scraper.SPORTSBET_scraper()
+    sb_scraper = sb.SBSportsScraper(sb_ufc_url,  chosen_date=chosen_date)
+    sb_mma_markets = await sb_scraper.SPORTSBET_scrape_mma()
     
     time.sleep(5)
     
