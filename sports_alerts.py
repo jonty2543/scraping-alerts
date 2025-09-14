@@ -19,6 +19,8 @@ import unidecode
 from supabase import create_client, Client
 import inspect
 import time
+import boto3
+from io import StringIO
 
 nest_asyncio.apply()
 
@@ -26,6 +28,8 @@ async def main():
     
     # %%
     chosen_date = datetime.now(pytz.timezone("Australia/Brisbane")).date().strftime("%Y-%m-%d")
+    offset = (datetime.now(pytz.timezone("Australia/Brisbane")).date().weekday() - 0) % 7  
+    monday = datetime.now(pytz.timezone("Australia/Brisbane")).date() - timedelta(days=offset)
     one_week = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(14)).date().strftime("%Y-%m-%d")
     two_week = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(14)).date().strftime("%Y-%m-%d")
     print(chosen_date)
@@ -511,7 +515,26 @@ async def main():
     SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdscnp3eHB4a2NreGFvZ3Brd21uIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NjA3OTU3NiwiZXhwIjoyMDcxNjU1NTc2fQ.YOF9ryJbhBoKKHT0n4eZDMGrR9dczR8INHVs_By4vRU"
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
     
+    # %% S3 Model Data
     
+    #NPC
+    s3 = boto3.client('s3')
+    
+    bucket_name = "model-prices"
+    key = "npc/2025-09-12"
+    #key = f"npc/{monday}"
+    
+    response = s3.get_object(Bucket=bucket_name, Key=key)
+    npc_csv = response['Body'].read().decode('utf-8')
+    npc_model_data = pd.read_csv(StringIO(npc_csv))
+    model_union_markets = {
+        row["Match"]: {
+            row["HomeTeam"]: round(row["HomePrice"], 2),
+            row["AwayTeam"]: round(row["AwayPrice"], 2)
+        }
+        for _, row in npc_model_data.iterrows()
+    }
+        
 
     
     # %% #---------Football--------#
@@ -624,19 +647,20 @@ async def main():
     time.sleep(5)
     
     logger.info("Fetching union model odds")    
-    
+
     
     bookmakers = {
         "Sportsbet": sb_union_markets,
         "Pointsbet": pb_union_markets,
         "Unibet": ub_union_markets,
         "Palmerbet": palm_union_markets,
-        "Betr": betr_union_markets  # Added Betr
+        "Betr": betr_union_markets,  # Added Betr
+        "Model": model_union_markets
     }
     
     
     # Updated list of price columns for fuzzy_merge_prices
-    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betr']
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betr', 'Model']
     
     process_odds(bookmakers, price_cols, table_name="Rugby Union Odds")
     
