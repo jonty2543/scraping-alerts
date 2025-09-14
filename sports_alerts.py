@@ -6,6 +6,7 @@ import pointsbet_scrapers as pb
 import unibet_scrapers as ub
 import PalmerBet_scrapers as palm
 import betr_scrapers as betr
+import betright_scrapers as br
 import asyncio
 import nest_asyncio
 import pandas as pd
@@ -395,6 +396,7 @@ async def main():
         
         return comp_dict
     
+    
     def process_odds(
         bookmakers: dict,
         price_cols: list,
@@ -490,6 +492,9 @@ async def main():
     def get_ub_url(sport):
         return f'https://www.unibet.com.au/sportsbook-feeds/views/filter/{sport}/all/matches?includeParticipants=true&useCombined=true'
     
+    def get_betright_url(sportId: int):
+        return f'https://next-api.betright.com.au/Sports/MasterCategory?eventTypeId={sportId}'
+    
     def result_searcher(df, result):
         print(df[df['result'] == result])
         
@@ -568,16 +573,22 @@ async def main():
     palm_football_markets = await palm_scraper.PalmerBet_scrape(comp=None, sport='football')
     
     time.sleep(5)
+    
+    logger.info("Scraping betright football data")
+    br_scraper = br.BRSportsScraper(get_betright_url(100),  chosen_date=chosen_date)
+    br_football_markets = await br_scraper.BETRIGHT_scrape_football()
+    
+    time.sleep(5)
         
     # Football df
     bookmakers = {
         "Sportsbet": sb_football_markets,
         "Pointsbet": pb_football_markets,
-        "Palmerbet": palm_football_markets
-        # "Unibet": ub_football_markets
+        "Palmerbet": palm_football_markets,
+        "Betright": br_football_markets
     }
     
-    price_cols = ['Sportsbet', 'Pointsbet', 'Palmerbet']  # , 'Unibet']
+    price_cols = ['Sportsbet', 'Pointsbet', 'Palmerbet', 'Betright']  # , 'Unibet']
     
     process_odds(bookmakers, price_cols, table_name="Football Odds", outcomes=3)
 
@@ -648,6 +659,12 @@ async def main():
     
     time.sleep(5)
     
+    logger.info("Scraping betright union data")
+    br_scraper = br.BRSportsScraper(get_betright_url(105),  chosen_date=chosen_date)
+    br_union_markets = await br_scraper.BETRIGHT_scraper()
+    
+    time.sleep(5)
+    
     logger.info("Fetching union model odds")    
 
     
@@ -657,12 +674,13 @@ async def main():
         "Unibet": ub_union_markets,
         "Palmerbet": palm_union_markets,
         "Betr": betr_union_markets,  # Added Betr
+        "Betright": br_union_markets,
         "Model": model_union_markets
     }
     
     
     # Updated list of price columns for fuzzy_merge_prices
-    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betr', 'Model']
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betr', 'Betright', 'Model']
     
     process_odds(bookmakers, price_cols, table_name="Rugby Union Odds")
     
@@ -699,16 +717,23 @@ async def main():
     
     time.sleep(5)
     
+    logger.info("Scraping betright NRL data")
+    br_scraper = br.BRSportsScraper(get_betright_url(102),  chosen_date=chosen_date)
+    br_nrl_markets = await br_scraper.BETRIGHT_scraper()
+    
+    time.sleep(5)
+    
     # --- Combine bookmaker markets ---
     bookmakers = {
         "Sportsbet": sb_nrl_markets,
         "Pointsbet": pb_nrl_markets,
         "Unibet": ub_nrl_markets,
         "Palmerbet": palm_nrl_markets,
-        "Betr": betr_nrl_markets  # Added Betr
+        "Betr": betr_nrl_markets,  # Added Betr
+        "Betright": br_nrl_markets
     }
     
-    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betr']
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betr', 'Betright']
 
     process_odds(bookmakers, price_cols, table_name="NRL Odds")
     
@@ -737,14 +762,21 @@ async def main():
     
     time.sleep(5)
     
+    logger.info("Scraping betright E Sports data")
+    br_scraper = br.BRSportsScraper(get_betright_url(124),  chosen_date=chosen_date)
+    br_esports_markets = await br_scraper.BETRIGHT_scraper()
+    
+    time.sleep(5)
+    
     # --- Combine bookmaker markets ---
     bookmakers = {
         "Sportsbet": sb_esports_markets,
         "Pointsbet": pb_esports_markets,
-        "Unibet": ub_esports_markets
+        "Unibet": ub_esports_markets,
+        "Betright": br_esports_markets
     }
     
-    price_cols = ["Sportsbet", "Pointsbet", "Unibet"]
+    price_cols = ["Sportsbet", "Pointsbet", "Unibet", "Betright"]
     
     process_odds(bookmakers, price_cols, table_name="E-Sports Odds")
     
