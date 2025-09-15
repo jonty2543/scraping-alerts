@@ -594,7 +594,7 @@ async def main():
     
     
     # %% #---------Tennis--------#
-    pb_tennis_compids = get_pb_comps('tennis')
+    '''pb_tennis_compids = get_pb_comps('tennis')
 
     logger.info(f"Scraping Pointsbet tennis Data")
     pb_tennis_markets = {}
@@ -618,7 +618,7 @@ async def main():
         "Unibet": ub_tennis_markets
     }
     
-    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet']  # , 'Unibet']
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet']  # , 'Unibet']'''
 
     
     
