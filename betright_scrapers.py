@@ -64,7 +64,7 @@ class BRSportsScraper:
                                 results = []
                                 
                                 for market in event.get("markets"):
-                                    if market.get("eventName", "").lower() != "match result":
+                                    if market.get("marketDesc", "").lower() != "win":
                                         continue
                                     
                                     result = market.get("outcomeName")
