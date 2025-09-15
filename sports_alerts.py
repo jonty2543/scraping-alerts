@@ -216,7 +216,8 @@ async def main():
                 base_df[bookie] = 0.0
     
         # Best price / bookie
-        bookie_cols = [b for b in bookie_names if b in base_df.columns]
+        bookie_cols = [b for b in bookie_names if b in base_df.columns and b != "Model"]
+        
         base_df['best_price'] = base_df[bookie_cols].max(axis=1, skipna=True)
         base_df['best_bookie'] = base_df.apply(
             lambda row: ', '.join([col for col in bookie_cols if row[col] == row['best_price']]), axis=1
