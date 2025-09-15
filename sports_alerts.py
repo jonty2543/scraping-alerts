@@ -401,7 +401,7 @@ async def main():
         bookmakers: dict,
         price_cols: list,
         table_name: str,
-        match_threshold: int = 80,
+        match_threshold: int = 85,
         outcomes: int = 2,
     ):
         """
@@ -528,8 +528,7 @@ async def main():
     s3 = boto3.client('s3')
     
     bucket_name = "model-prices"
-    key = "npc/2025-09-12"
-    #key = f"npc/{monday}"
+    key = f"npc/{monday}"
     
     response = s3.get_object(Bucket=bucket_name, Key=key)
     npc_csv = response['Body'].read().decode('utf-8')
@@ -595,7 +594,7 @@ async def main():
     
     
     # %% #---------Tennis--------#
-    '''pb_tennis_compids = get_pb_comps('tennis')
+    pb_tennis_compids = get_pb_comps('tennis')
 
     logger.info(f"Scraping Pointsbet tennis Data")
     pb_tennis_markets = {}
@@ -618,11 +617,10 @@ async def main():
         "Pointsbet": pb_tennis_markets,
         "Unibet": ub_tennis_markets
     }
-    '''
     
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet']  # , 'Unibet']
+
     
-    (1/2.31)*2.3 + ((1-1/2.31)*-1)
-   
     
     # %% #---------union--------#
     logger.info(f"Scraping Sportsbet Union Data")
