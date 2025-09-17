@@ -404,6 +404,7 @@ async def main():
         table_name: str,
         match_threshold: int = 85,
         outcomes: int = 2,
+        names=False
     ):
         """
         Process odds from multiple bookmakers, merge, calculate market %, 
@@ -466,10 +467,49 @@ async def main():
             lambda x: ", ".join(x) if isinstance(x, list) else str(x)
         )
         df_mapped["Market %"] = df_mapped["Market %"].round(4)
+        
+        current_table = supabase.table(table_name).select("*").execute()
+        current_df = pd.DataFrame(current_table.data)
     
         # Convert to dict records
         records = df_mapped.to_dict(orient="records")
-    
+        
+        flucs = pd.merge(df_mapped[['Match', 'Result'] + price_cols], current_df[['Match', 'Result'] + price_cols], on=['Match', 'Result'], suffixes=('_new', '_old'))
+        new_prices = flucs.melt(
+            id_vars=['Match', 'Result'],
+            value_vars=[f"{c}_new" for c in price_cols],
+            var_name='Bookie',
+            value_name='New Price'
+        )
+        new_prices['Bookie'] = new_prices['Bookie'].str.replace('_new', '')
+        
+        old_prices = flucs.melt(
+            id_vars=['Match', 'Result'],
+            value_vars=[f"{c}_old" for c in price_cols],
+            var_name='Bookie',
+            value_name='Old Price'
+        )
+        old_prices['Bookie'] = old_prices['Bookie'].str.replace('_old', '')
+        
+        # Combine back into long tidy DataFrame
+        flucs_long = pd.merge(
+            new_prices,
+            old_prices,
+            on=['Match', 'Result', 'Bookie']
+        )
+        
+        flucs_long['Time'] = datetime.now(pytz.timezone("Australia/Brisbane"))
+        flucs_long['Prob Change'] = 1/flucs_long['New Price'] - 1/flucs_long['Old Price']
+        
+        records_flucs = flucs_long.to_dict(orient="records")
+
+        # flucs upsert
+        logger.info(f"Upserting flucs records...")
+        supabase.table("Price Flucs").upsert(
+            records_flucs,
+            on_conflict=["Match", "Result", "Bookie"]  # choose your PK/unique constraint columns
+        ).execute()
+            
         # Supabase insert
         logger.info(f"Clearing {table_name} table before insert...")
         supabase.table(table_name).delete().neq("Match", "").execute()
@@ -595,7 +635,7 @@ async def main():
     
     
     # %% #---------Tennis--------#
-    '''pb_tennis_compids = get_pb_comps('tennis')
+    pb_tennis_compids = get_pb_comps('tennis')
 
     logger.info(f"Scraping Pointsbet tennis Data")
     pb_tennis_markets = {}
@@ -620,8 +660,15 @@ async def main():
     }
     
     price_cols = ['Sportsbet', 'Pointsbet', 'Unibet']  # , 'Unibet']'''
-
     
+    process_odds(
+        bookmakers,
+        price_cols,
+        "Tennis Odds",      # table_name
+        match_threshold=70, # optional
+        names=True          # optional
+    )
+        
     
     # %% #---------union--------#
     logger.info(f"Scraping Sportsbet Union Data")
