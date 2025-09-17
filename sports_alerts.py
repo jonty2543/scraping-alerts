@@ -501,6 +501,7 @@ async def main():
         flucs_long['Time'] = datetime.now(pytz.timezone("Australia/Brisbane")).strftime('%Y-%m-%d %H:%M:%S')
         flucs_long['Prob Change'] = 1/flucs_long['New Price'] - 1/flucs_long['Old Price']
         flucs_long = flucs_long.replace([np.nan, np.inf, -np.inf], None)
+        flucs_long['Sport'] = table_name.replace(" Odds", "")
         
         records_flucs = flucs_long.to_dict(orient="records")
 
