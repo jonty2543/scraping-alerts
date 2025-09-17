@@ -498,17 +498,21 @@ async def main():
             on=['Match', 'Result', 'Bookie']
         )
         
-        flucs_long['Time'] = datetime.now(pytz.timezone("Australia/Brisbane"))
+        flucs_long['Time'] = datetime.now(pytz.timezone("Australia/Brisbane")).strftime('%Y-%m-%d %H:%M:%S')
         flucs_long['Prob Change'] = 1/flucs_long['New Price'] - 1/flucs_long['Old Price']
+        flucs_long = flucs_long.replace([np.nan, np.inf, -np.inf], None)
         
         records_flucs = flucs_long.to_dict(orient="records")
 
         # flucs upsert
-        logger.info(f"Upserting flucs records...")
-        supabase.table("Price Flucs").upsert(
-            records_flucs,
-            on_conflict=["Match", "Result", "Bookie"]  # choose your PK/unique constraint columns
-        ).execute()
+
+        # Delete any existing rows that match the new data
+        for rec in records_flucs:
+            supabase.table("Price Flucs").delete().eq("Match", rec["Match"])\
+                .eq("Result", rec["Result"]).eq("Bookie", rec["Bookie"]).execute()
+        
+        # Insert new records
+        supabase.table("Price Flucs").insert(records_flucs).execute()
             
         # Supabase insert
         logger.info(f"Clearing {table_name} table before insert...")
