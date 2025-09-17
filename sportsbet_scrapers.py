@@ -191,6 +191,9 @@ class SBSportsScraper:
                 
             for market in all_markets:
                 
+                if market.get("hasBIRStarted") == 'true':
+                    continue
+                
                 if competition_id != 'none':
                     if market.get("competitionId") != competition_id:
                         continue
@@ -238,6 +241,9 @@ class SBSportsScraper:
     
             # Step 2: Loop through each event
             for event in all_events:
+                
+                if event.get("hasBIRStarted") == 'true':
+                    continue
     
                 # Filter by competition if needed
                 if competition_id != 'none':
@@ -300,6 +306,9 @@ class SBSportsScraper:
                 for event in comp.get("events"):
                     
                     event_name = event['name']
+                    
+                    if event.get("hasBIRStarted") == 'true':
+                        continue
                     
                     for market in event.get("marketList"):
                         if market.get("name") != 'Match Betting':

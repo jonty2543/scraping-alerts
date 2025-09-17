@@ -55,6 +55,10 @@ class PalmerBetSportsScraper:
             return win_market
 
         for game in matches:
+            
+            if game.get("status") != 'NotStarted':
+                continue
+            
             if comp:
                 if game['paths'][2]['title'] != comp:
                     continue
