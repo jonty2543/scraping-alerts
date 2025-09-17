@@ -58,7 +58,7 @@ class UBSportsScraper:
                 for comp in division.get("events", []):
                     event = comp.get("event", {})
                     
-                    if event.get("state") != 'NOTSTARTED':
+                    if event.get("state") != 'NOT_STARTED':
                         continue
                         
                     match_name = event.get("englishName") or event.get("name")
@@ -118,7 +118,7 @@ class UBSportsScraper:
                 for comp in division.get("events", []):
                     event = comp.get("event", {})
                     
-                    if event.get("state") != 'NOTSTARTED':
+                    if event.get("state") != 'NOT_STARTED':
                         continue
                     
                     match_name = event.get("englishName") or event.get("name")
@@ -182,7 +182,7 @@ class UBSportsScraper:
             for game in (group.get("events") or []):
                 event = game.get("event", {})
                 
-                if event.get("state") != 'NOTSTARTED':
+                if event.get("state") != 'NOT_STARTED':
                     continue
                     
                 match_name = event.get("englishName") or event.get("name")
@@ -241,7 +241,7 @@ class UBSportsScraper:
             for comp in events:
                 event = comp.get("event", {})
                 
-                if event.get("state") != 'NOTSTARTED':
+                if event.get("state") != 'NOT_STARTED':
                     continue
                     
                 match_name = event.get("englishName") or event.get("name")

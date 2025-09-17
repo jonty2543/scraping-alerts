@@ -723,14 +723,14 @@ async def main():
         "Pointsbet": pb_union_markets,
         "Unibet": ub_union_markets,
         "Palmerbet": palm_union_markets,
-        "Betr": betr_union_markets,  # Added Betr
+        #"Betr": betr_union_markets,  # Added Betr
         "Betright": br_union_markets,
         "Model": model_union_markets
     }
     
     
     # Updated list of price columns for fuzzy_merge_prices
-    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betr', 'Betright', 'Model']
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betright', 'Model']
     
     process_odds(bookmakers, price_cols, table_name="Rugby Union Odds")
     
@@ -779,11 +779,11 @@ async def main():
         "Pointsbet": pb_nrl_markets,
         "Unibet": ub_nrl_markets,
         "Palmerbet": palm_nrl_markets,
-        "Betr": betr_nrl_markets,  # Added Betr
+        #"Betr": betr_nrl_markets,  # Added Betr
         "Betright": br_nrl_markets
     }
     
-    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betr', 'Betright']
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betright']
 
     process_odds(bookmakers, price_cols, table_name="NRL Odds")
     
