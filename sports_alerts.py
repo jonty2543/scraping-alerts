@@ -514,6 +514,10 @@ async def main():
         
         # Insert new records
         supabase.table("Price Flucs").insert(records_flucs).execute()
+        supabase.table("Recent Flucs").insert(records_flucs).execute()
+        
+        time_threshold = (datetime.now(pytz.timezone("Australia/Brisbane")) - timedelta(hours=24)).isoformat()
+        response = supabase.table("Recent Flucs").delete().lt("Time", time_threshold).execute()
             
         # Supabase insert
         logger.info(f"Clearing {table_name} table before insert...")
@@ -521,7 +525,7 @@ async def main():
     
         logger.info(f"Inserting fresh {table_name} records...")
         supabase.table(table_name).insert(records).execute()
-    
+
         # Print some sample market %
         print(mkt_percents[["match", "mkt_percent"]].head(10))
     
