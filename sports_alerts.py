@@ -499,22 +499,31 @@ async def main():
         )
         
         flucs_long['Time'] = datetime.now(pytz.timezone("Australia/Brisbane")).strftime('%Y-%m-%d %H:%M:%S')
-        flucs_long['Prob Change'] = 1/flucs_long['New Price'] - 1/flucs_long['Old Price']
+        flucs_long['Prob Change'] = 1 / flucs_long['New Price'] - 1 / flucs_long['Old Price']
         flucs_long = flucs_long.replace([np.nan, np.inf, -np.inf], None)
         flucs_long['Sport'] = table_name.replace(" Odds", "")
         
+        # Convert to list of dicts for Supabase
         records_flucs = flucs_long.to_dict(orient="records")
-
-        # flucs upsert
-
-        # Delete any existing rows that match the new data
-        for rec in records_flucs:
-            supabase.table("Price Flucs").delete().eq("Match", rec["Match"])\
-                .eq("Result", rec["Result"]).eq("Bookie", rec["Bookie"]).execute()
         
-        # Insert new records
-        supabase.table("Price Flucs").insert(records_flucs).execute()
-        supabase.table("Recent Flucs").insert(records_flucs).execute()
+        if not records_flucs:
+            print("⚠️ No flucs records to insert. Skipping.")
+        else:
+            # Delete existing rows that match new data
+            for rec in records_flucs:
+                supabase.table("Price Flucs").delete()\
+                    .eq("Match", rec.get("Match"))\
+                    .eq("Result", rec.get("Result"))\
+                    .eq("Bookie", rec.get("Bookie"))\
+                    .execute()
+            
+            # Insert new records safely
+            try:
+                supabase.table("Price Flucs").insert(records_flucs).execute()
+                supabase.table("Recent Flucs").insert(records_flucs).execute()
+                print(f"✅ Inserted {len(records_flucs)} records into Price Flucs and Recent Flucs.")
+            except Exception as e:
+                print("❌ Failed to insert records into Supabase:", e)
         
         time_threshold = (datetime.now(pytz.timezone("Australia/Brisbane")) - timedelta(hours=24)).isoformat()
         response = supabase.table("Recent Flucs").delete().lt("Time", time_threshold).execute()

@@ -47,7 +47,7 @@ class PBSportsScraper:
             for event in events:
                 markets = event['specialFixedOddsMarkets']
                 
-                if event.get("isLive") == 'true':
+                if event.get("isLive") is True:
                     continue
                 
                 for market in markets:
@@ -99,7 +99,7 @@ class PBSportsScraper:
             for event in events:
                 markets = event['specialFixedOddsMarkets']
                 
-                if event.get("isLive") == 'true':
+                if event.get("isLive") is True:
                     continue
                 
                 for market in markets:
@@ -150,7 +150,7 @@ class PBSportsScraper:
             for event in league.get('events'):
                 markets = event['fixedOddsMarkets']
                 
-                if event.get("isLive") == 'true':
+                if event.get("isLive") is True:
                     continue
 
                 prices = []
