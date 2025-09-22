@@ -36,6 +36,7 @@ async def main():
     print(chosen_date)
     print(one_week)
     print(two_week)
+    print(monday)
     
     
     def normalize_match(match):
@@ -525,7 +526,7 @@ async def main():
             except Exception as e:
                 print("❌ Failed to insert records into Supabase:", e)
         
-        time_threshold = (datetime.now(pytz.timezone("Australia/Brisbane")) - timedelta(hours=24)).isoformat()
+        time_threshold = (datetime.now(pytz.timezone("Australia/Brisbane")) - timedelta(hours=3)).isoformat()
         response = supabase.table("Recent Flucs").delete().lt("Time", time_threshold).execute()
             
         # Supabase insert
@@ -589,17 +590,21 @@ async def main():
     bucket_name = "model-prices"
     key = f"npc/{monday}"
     
-    response = s3.get_object(Bucket=bucket_name, Key=key)
-    npc_csv = response['Body'].read().decode('utf-8')
-    npc_model_data = pd.read_csv(StringIO(npc_csv))
-    model_union_markets = {
-        row["Match"]: {
-            row["HomeTeam"]: round(row["HomePrice"], 2),
-            row["AwayTeam"]: round(row["AwayPrice"], 2)
+
+    try:
+        response = s3.get_object(Bucket=bucket_name, Key=key)
+        npc_csv = response['Body'].read().decode('utf-8')
+        npc_model_data = pd.read_csv(StringIO(npc_csv))
+    
+        model_union_markets = {
+            row["Match"]: {
+                row["HomeTeam"]: round(row["HomePrice"], 2),
+                row["AwayTeam"]: round(row["AwayPrice"], 2)
+            }
+            for _, row in npc_model_data.iterrows()
         }
-        for _, row in npc_model_data.iterrows()
-    }
-        
+    except :
+        logger.info(f'No model prices for union')
 
     
     # %% #---------Football--------#
@@ -738,13 +743,15 @@ async def main():
         "Unibet": ub_union_markets,
         "Palmerbet": palm_union_markets,
         #"Betr": betr_union_markets,  # Added Betr
-        "Betright": br_union_markets,
-        "Model": model_union_markets
+        "Betright": br_union_markets
     }
     
-    
     # Updated list of price columns for fuzzy_merge_prices
-    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betright', 'Model']
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betright']
+    
+    if model_union_markets:
+        bookmakers['Model'] = model_union_markets
+        price_cols.append('Model')
     
     process_odds(bookmakers, price_cols, table_name="Rugby Union Odds")
     
