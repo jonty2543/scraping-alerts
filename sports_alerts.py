@@ -604,6 +604,7 @@ async def main():
             for _, row in npc_model_data.iterrows()
         }
     except :
+        model_union_markets = {}
         logger.info(f'No model prices for union')
 
     
