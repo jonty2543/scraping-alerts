@@ -471,6 +471,10 @@ async def main():
         
         current_table = supabase.table(table_name).select("*").execute()
         current_df = pd.DataFrame(current_table.data)
+        
+        for col in ['Match', 'Result'] + price_cols:
+            if col not in current_df.columns:
+                current_df[col] = None  # or 0.0 for numeric columns
     
         # Convert to dict records
         records = df_mapped.to_dict(orient="records")
