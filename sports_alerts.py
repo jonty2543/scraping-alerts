@@ -1,12 +1,15 @@
 import pytz
 from datetime import datetime, timedelta
 from loguru import logger
+
 import sportsbet_scrapers as sb
 import pointsbet_scrapers as pb
 import unibet_scrapers as ub
 import PalmerBet_scrapers as palm
 import betr_scrapers as betr
 import betright_scrapers as br
+import betdeluxe_scrapers as bd
+
 import asyncio
 import nest_asyncio
 import pandas as pd
@@ -568,6 +571,9 @@ async def main():
     def get_betright_url(sportId: int):
         return f'https://next-api.betright.com.au/Sports/MasterCategory?eventTypeId={sportId}'
     
+    def get_betdeluxe_url(sport):
+        return f'https://api.blackstream.com.au/api/sports/v1/sports/{sport}/competitions'
+    
     def result_searcher(df, result):
         print(df[df['result'] == result])
         
@@ -656,16 +662,21 @@ async def main():
     br_football_markets = await br_scraper.BETRIGHT_scrape_football()
     
     time.sleep(5)
+    
+    logger.info("Scraping betdeluxe football data")
+    bd_scraper = bd.BDSportsScraper(get_betdeluxe_url('soccer'), chosen_date=chosen_date)
+    bd_football_markets = await bd_scraper.BETDELUXE_scraper(sport='soccer')
         
     # Football df
     bookmakers = {
         "Sportsbet": sb_football_markets,
         "Pointsbet": pb_football_markets,
         "Palmerbet": palm_football_markets,
-        "Betright": br_football_markets
+        "Betright": br_football_markets,
+        "Betdeluxe": bd_football_markets
     }
     
-    price_cols = ['Sportsbet', 'Pointsbet', 'Palmerbet', 'Betright']  # , 'Unibet']
+    price_cols = ['Sportsbet', 'Pointsbet', 'Palmerbet', 'Betright', 'Betdeluxe']  # , 'Unibet']
     
     process_odds(bookmakers, price_cols, table_name="Football Odds", outcomes=3)
 
@@ -685,18 +696,27 @@ async def main():
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(13),  chosen_date=chosen_date)
     sb_tennis_markets = await sb_scraper.SPORTSBET_scraper()
     
+    time.sleep(5)
+    
     logger.info(f"Scraping Unibet tennis Data")
     ub_scraper = ub.UBSportsScraper(get_ub_url('tennis'),  chosen_date=chosen_date)
     ub_tennis_markets = await ub_scraper.UNIBET_scrape_tennis()
+    
+    time.sleep(5)
+    
+    logger.info("Scraping betdeluxe tennis data")
+    bd_scraper = bd.BDSportsScraper(get_betdeluxe_url('tennis'), chosen_date=chosen_date)
+    bd_tennis_markets = await bd_scraper.BETDELUXE_scraper(sport='tennis')
     
     #tennis df
     bookmakers = {
         "Sportsbet": sb_tennis_markets,
         "Pointsbet": pb_tennis_markets,
-        "Unibet": ub_tennis_markets
+        "Unibet": ub_tennis_markets,
+        "Betdeluxe": bd_tennis_markets
     }
     
-    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet']  # , 'Unibet']'''
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Betdeluxe']  # , 'Unibet']'''
     
     process_odds(
         bookmakers,
@@ -747,6 +767,11 @@ async def main():
     br_union_markets = await br_scraper.BETRIGHT_scraper()
     
     time.sleep(5)
+        
+    logger.info("Scraping betdeluxe union data")
+    bd_scraper = bd.BDSportsScraper(get_betdeluxe_url('rugby-union'), chosen_date=chosen_date)
+    bd_union_markets = await bd_scraper.BETDELUXE_scraper(sport='rugby-union')
+    
     
     logger.info("Fetching union model odds")    
 
@@ -757,11 +782,12 @@ async def main():
         "Unibet": ub_union_markets,
         "Palmerbet": palm_union_markets,
         #"Betr": betr_union_markets,  # Added Betr
-        "Betright": br_union_markets
+        "Betright": br_union_markets,
+        "Betdeluxe": bd_union_markets
     }
     
     # Updated list of price columns for fuzzy_merge_prices
-    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betright']
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betright', 'Betdeluxe']
     
     if model_union_markets:
         bookmakers['Model'] = model_union_markets
@@ -851,7 +877,6 @@ async def main():
     br_scraper = br.BRSportsScraper(get_betright_url(124),  chosen_date=chosen_date)
     br_esports_markets = await br_scraper.BETRIGHT_scraper()
     
-    time.sleep(5)
     
     # --- Combine bookmaker markets ---
     bookmakers = {
@@ -889,15 +914,20 @@ async def main():
     ub_mma_markets = await ub_scraper.UNIBET_scrape_sport()
     
     time.sleep(5)
+                
+    logger.info("Scraping betdeluxe union data")
+    bd_scraper = bd.BDSportsScraper(get_betdeluxe_url('martial-arts'), chosen_date=chosen_date)
+    bd_mma_markets = await bd_scraper.BETDELUXE_scraper(sport='martial-arts', market_name='Fight Result')
     
     # --- Combine bookmaker markets ---
     bookmakers = {
         "Sportsbet": sb_mma_markets,
         "Pointsbet": pb_mma_markets,
-        "Unibet": ub_mma_markets
+        "Unibet": ub_mma_markets,
+        "Betdeluxe": bd_mma_markets
     }
     
-    price_cols = ["Sportsbet", "Pointsbet", "Unibet"]
+    price_cols = ["Sportsbet", "Pointsbet", "Unibet", "Betdeluxe"]
     
     process_odds(bookmakers, price_cols, table_name="MMA Odds")
     
