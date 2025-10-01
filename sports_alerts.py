@@ -587,6 +587,7 @@ async def main():
     palm_tennis_url = f'https://fixture.palmerbet.online/fixtures/sports/9d6bbedd-0b09-4031-9884-e264499a2aa5/matches?sportType=tennis&pageSize=1000&channel=website'
     palm_nrl_url = f'https://fixture.palmerbet.online/fixtures/sports/cf404de1-1953-4d55-b92e-4e022f186b22/matches?sportType=rugbyleague&pageSize=1000&channel=website'
     palm_football_url = f'https://fixture.palmerbet.online/fixtures/sports/b4073512-cdd5-4953-950f-3f7ad31fa955/matches?sportType=Soccer&pageSize=1000'
+    palm_basketball_url = f'https://fixture.palmerbet.online/fixtures/sports/b26e5acc-02ff-4b22-ae69-0491fbd2500e/matches?sportType=basketball&pageSize=24&channel=website'
     
     betr_union_url = 'https://web20-api.bluebet.com.au/MasterCategory?EventTypeId=105&WithLevelledMarkets=true'
     betr_nrl_url = 'https://web20-api.bluebet.com.au/MasterCategory?EventTypeId=102&WithLevelledMarkets=true'
@@ -934,7 +935,7 @@ async def main():
     
     
     #%% Basketball
-    '''
+    
     logger.info(f"Scraping Sportsbet Basketball Data")
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=16),  chosen_date=chosen_date)
     sb_basketball_markets = await sb_scraper.SPORTSBET_scraper()
@@ -946,7 +947,32 @@ async def main():
         pb_scraper = pb.PBSportsScraper(get_pb_url(comp_id),  chosen_date=chosen_date)
         comp_markets = await pb_scraper.POINTSBET_scrape_nrl(market_type='Head to Head')
         pb_basketball_markets.update(comp_markets)
-    '''
+        
+    
+    logger.info(f"Scraping Unibet Basketball Data")
+    ub_scraper = ub.UBSportsScraper(get_ub_url('basketball'), chosen_date=chosen_date)
+    ub_basketball_markets = await ub_scraper.UNIBET_scrape_sport()
+    
+    logger.info(f"Scraping Palmerbet Basketball Data")
+    palm_scraper = palm.PalmerBetSportsScraper(palm_basketball_url, chosen_date=chosen_date)
+    palm_basketball_markets = await palm_scraper.PalmerBet_scrape()   
+    
+    logger.info("Scraping betright Basketball data")
+    br_scraper = br.BRSportsScraper(get_betright_url(107),  chosen_date=chosen_date)
+    br_basketball_markets = await br_scraper.BETRIGHT_scraper()
+
+    # --- Combine bookmaker markets ---
+    bookmakers = {
+        "Sportsbet": sb_basketball_markets,
+        "Pointsbet": pb_basketball_markets,
+        "Unibet": ub_basketball_markets,
+        "Palmerbet": palm_basketball_markets,
+        "Betright": br_basketball_markets
+    }
+    
+    price_cols = ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright"]
+    
+    process_odds(bookmakers, price_cols, table_name="Basketball Odds")
     
 if __name__ == "__main__":
     asyncio.run(main())
