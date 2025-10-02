@@ -202,6 +202,10 @@ class SBSportsScraper:
                     continue
                     
                 primaryMarket = market['primaryMarket']
+                
+                if primaryMarket['name'] != "Win-Draw-Win":
+                    continue
+                
                 selections = primaryMarket['selections']
                 market_name = market['displayName']
                 
