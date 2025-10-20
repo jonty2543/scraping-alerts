@@ -427,11 +427,27 @@ async def main():
         for name, markets in bookmakers.items():
             rows = []
             for match, odds in markets.items():
-                for result, price in odds.items():
-                    rows.append({"match": match, "result": result, f"{name}": price})
-            dfs[name] = pd.DataFrame(rows)
+                if len(odds) >= outcomes:
+                    for result, price in odds.items():
+                        rows.append({"match": match, "result": result, f"{name}": price})
+            df = pd.DataFrame(rows)
+
+            # If the entire bookmaker has fewer total rows than expected, skip it altogether
+            if df.empty:
+                logger.warning(f"Skipping {name} entirely — no valid markets found.")
+                continue
+        
+            dfs[name] = df
     
-        dfs_list = [dfs[name] for name in price_cols]
+        valid_price_cols = [name for name in price_cols if name in dfs and not dfs[name].empty]
+        
+        if not valid_price_cols:
+            logger.error("❌ No valid bookmakers available after filtering. Exiting early.")
+            return None, None
+        
+        dfs_list = [dfs[name] for name in valid_price_cols]
+        
+        logger.info(f"Including {len(valid_price_cols)} valid bookmakers: {valid_price_cols}")
     
         logger.info(f"Merging {table_name} dfs")
         merged_df, mkt_percents = fuzzy_merge_prices(
@@ -447,12 +463,14 @@ async def main():
         merged_df = merged_df[merged_df["mkt_percent"] > 80]
 
         
-        # Log coverage per bookmaker
-        for name in price_cols:
-            if len(dfs[name]) > 0:
-                logger.info(
-                    f"{name} matched: {merged_df[name].count() / len(dfs[name]):.2%}"
-                )
+        # Log coverage per valid bookmaker only
+        for name in valid_price_cols:
+            total_rows = len(dfs.get(name, []))
+            matched_rows = merged_df[name].count() if name in merged_df.columns else 0
+            if total_rows > 0:
+                logger.info(f"{name} matched: {matched_rows / total_rows:.2%}")
+            else:
+                logger.warning(f"{name} had no valid rows to match.")
     
         # Cleanup + rename
         col_map = {
@@ -471,6 +489,8 @@ async def main():
             lambda x: ", ".join(x) if isinstance(x, list) else str(x)
         )
         df_mapped["Market %"] = df_mapped["Market %"].round(4)
+        
+        df_mapped.groupby(by='Match').agg
         
         current_table = supabase.table(table_name).select("*").execute()
         current_df = pd.DataFrame(current_table.data)
@@ -526,19 +546,42 @@ async def main():
         if not records_flucs:
             print("⚠️ No flucs records to insert. Skipping.")
         else:
+            # Insert new records safely
+            try:
+                supabase.table("Recent Flucs").insert(records_flucs).execute()
+                print(f"✅ Inserted {len(records_flucs)} records into Historical Odds and Recent Flucs.")
+            except Exception as e:
+                print("❌ Failed to insert records into Supabase:", e)
+        
+        flucs_long['Price'] = flucs_long['New Price']
+        prices = flucs_long[['Match', 'Result', 'Bookie', 'Price', 'Time', 'Sport']]
+        
+        agg_prices = (
+            prices.loc[prices['Price'].gt(0) & prices['Price'].notna()].groupby(['Result', 'Match'], as_index=False)
+            .agg({
+                'Price': 'mean',      
+                'Time': 'max',      
+                'Sport': 'max'      
+            })
+            .rename(columns={'Price': 'Price', 'Time': 'Time', 'Sport': 'Sport'})
+        )
+        
+        records_prices = agg_prices.to_dict(orient="records")
+        
+        if not records_prices:
+            print("⚠️ No flucs records to insert. Skipping.")
+        else:
             # Delete existing rows that match new data
-            for rec in records_flucs:
-                supabase.table("Price Flucs").delete()\
+            for rec in records_prices:
+                supabase.table("Historical Odds").delete()\
                     .eq("Match", rec.get("Match"))\
                     .eq("Result", rec.get("Result"))\
-                    .eq("Bookie", rec.get("Bookie"))\
                     .execute()
             
             # Insert new records safely
             try:
-                supabase.table("Price Flucs").insert(records_flucs).execute()
-                supabase.table("Recent Flucs").insert(records_flucs).execute()
-                print(f"✅ Inserted {len(records_flucs)} records into Price Flucs and Recent Flucs.")
+                supabase.table("Historical Odds").insert(records_prices).execute()
+                print(f"✅ Inserted {len(records_prices)} records into historical odds.")
             except Exception as e:
                 print("❌ Failed to insert records into Supabase:", e)
         
@@ -938,8 +981,15 @@ async def main():
     
     logger.info(f"Scraping Sportsbet Basketball Data")
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=16),  chosen_date=chosen_date)
-    sb_basketball_markets = await sb_scraper.SPORTSBET_scraper()
+    sb_basketball_us_markets = await sb_scraper.SPORTSBET_scraper()
+    sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=63),  chosen_date=chosen_date)
+    sb_basketball_other_markets = await sb_scraper.SPORTSBET_scraper()
     
+    sb_basketball_markets = pd.concat(
+        [sb_basketball_us_markets, sb_basketball_other_markets],
+        ignore_index=True
+    )    
+
     pb_basketball_compids = get_pb_comps('basketball')  
     pb_basketball_markets = {}   
     logger.info(f"Scraping Pointsbet basketball Data")
