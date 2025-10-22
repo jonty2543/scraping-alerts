@@ -9,6 +9,7 @@ import PalmerBet_scrapers as palm
 import betr_scrapers as betr
 import betright_scrapers as br
 import betdeluxe_scrapers as bd
+import surge_scrapers as ss
 
 import asyncio
 import nest_asyncio
@@ -370,6 +371,33 @@ async def main():
             print(f"Failed to retrieve data: {response.status_code} {response.text}")
             
         return pb_compids
+    
+    
+    def get_surge_comps(sport):
+        surge_comps_url = f'https://api.blackstream.com.au/api/sports/v1/sports/{sport}/competitions'
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/115.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+        }
+
+        response = requests.get(surge_comps_url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            comps = []
+            for region in data.get("data", {}).get("regions", []):
+                for comp in region.get("competitions", []):
+                    comps.append(
+                        comp.get("id")
+                    )
+                
+        else:
+            print(f"Failed to retrieve data: {response.status_code} {response.text}")
+            
+        return comps
 
     
     def get_sportsbet_url(sportId: int):
@@ -617,6 +645,10 @@ async def main():
     def get_betdeluxe_url(sport):
         return f'https://api.blackstream.com.au/api/sports/v1/sports/{sport}/competitions'
     
+    def get_surge_url(sport, comp_id):
+        return f'https://api.blackstream.com.au/api/sports/v1/sports/{sport}/competitions/{comp_id}/events'
+    
+    
     def result_searcher(df, result):
         print(df[df['result'] == result])
         
@@ -752,15 +784,29 @@ async def main():
     bd_scraper = bd.BDSportsScraper(get_betdeluxe_url('tennis'), chosen_date=chosen_date)
     bd_tennis_markets = await bd_scraper.BETDELUXE_scraper(sport='tennis')
     
+    time.sleep(5)
+    
+    surge_tennis_compids = get_surge_comps('tennis')           
+        
+    logger.info(f"Scraping Surgebet Tennis Data")
+    surge_tennis_markets = {}
+    for comp_id in surge_tennis_compids:
+        surge_scraper = ss.SurgeSportsScraper(get_surge_url('tennis', comp_id),  chosen_date=chosen_date)
+        comp_markets = await surge_scraper.Surge_scrape(market ='Match Result')
+        surge_tennis_markets.update(comp_markets)
+        
+    time.sleep(5)
+    
     #tennis df
     bookmakers = {
         "Sportsbet": sb_tennis_markets,
         "Pointsbet": pb_tennis_markets,
         "Unibet": ub_tennis_markets,
-        "Betdeluxe": bd_tennis_markets
+        "Betdeluxe": bd_tennis_markets,
+        "SurgeBet": surge_tennis_markets
     }
     
-    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Betdeluxe']  # , 'Unibet']'''
+    price_cols = ['Sportsbet', 'Pointsbet', 'Unibet', 'Betdeluxe', 'SurgeBet']  # , 'Unibet']'''
     
     process_odds(
         bookmakers,
@@ -963,15 +1009,29 @@ async def main():
     bd_scraper = bd.BDSportsScraper(get_betdeluxe_url('martial-arts'), chosen_date=chosen_date)
     bd_mma_markets = await bd_scraper.BETDELUXE_scraper(sport='martial-arts', market_name='Fight Result')
     
+    time.sleep(5)
+    
+    surge_mma_compids = get_surge_comps('martial-arts')           
+        
+    logger.info(f"Scraping Surgebet MMA Data")
+    surge_mma_markets = {}
+    for comp_id in surge_mma_compids:
+        surge_scraper = ss.SurgeSportsScraper(get_surge_url('martial-arts', comp_id),  chosen_date=chosen_date)
+        comp_markets = await surge_scraper.Surge_scrape(market ='Fight Result')
+        surge_mma_markets.update(comp_markets)
+        
+    time.sleep(5)
+    
     # --- Combine bookmaker markets ---
     bookmakers = {
         "Sportsbet": sb_mma_markets,
         "Pointsbet": pb_mma_markets,
         "Unibet": ub_mma_markets,
-        "Betdeluxe": bd_mma_markets
+        "Betdeluxe": bd_mma_markets,
+        "SurgeBet": surge_mma_markets
     }
     
-    price_cols = ["Sportsbet", "Pointsbet", "Unibet", "Betdeluxe"]
+    price_cols = ["Sportsbet", "Pointsbet", "Unibet", "Betdeluxe", "SurgeBet"]
     
     process_odds(bookmakers, price_cols, table_name="MMA Odds")
     
@@ -989,6 +1049,8 @@ async def main():
         [sb_basketball_us_markets, sb_basketball_other_markets],
         ignore_index=True
     )    
+    
+    time.sleep(5)
 
     pb_basketball_compids = get_pb_comps('basketball')  
     pb_basketball_markets = {}   
@@ -998,18 +1060,36 @@ async def main():
         comp_markets = await pb_scraper.POINTSBET_scrape_nrl(market_type='Head to Head')
         pb_basketball_markets.update(comp_markets)
         
+    time.sleep(5)
     
     logger.info(f"Scraping Unibet Basketball Data")
     ub_scraper = ub.UBSportsScraper(get_ub_url('basketball'), chosen_date=chosen_date)
     ub_basketball_markets = await ub_scraper.UNIBET_scrape_sport()
     
+    time.sleep(5)
+    
     logger.info(f"Scraping Palmerbet Basketball Data")
     palm_scraper = palm.PalmerBetSportsScraper(palm_basketball_url, chosen_date=chosen_date)
     palm_basketball_markets = await palm_scraper.PalmerBet_scrape()   
     
+    time.sleep(5)
+    
     logger.info("Scraping betright Basketball data")
     br_scraper = br.BRSportsScraper(get_betright_url(107),  chosen_date=chosen_date)
     br_basketball_markets = await br_scraper.BETRIGHT_scraper()
+    
+    time.sleep(5)
+    
+    surge_basketball_compids = get_surge_comps('basketball')           
+        
+    logger.info(f"Scraping Surgebet basketball Data")
+    surge_basketball_markets = {}
+    for comp_id in surge_basketball_compids:
+        surge_scraper = ss.SurgeSportsScraper(get_surge_url('basketball', comp_id),  chosen_date=chosen_date)
+        comp_markets = await surge_scraper.Surge_scrape(market ='Match Result')
+        surge_basketball_markets.update(comp_markets)
+        
+    time.sleep(5)
 
     # --- Combine bookmaker markets ---
     bookmakers = {
@@ -1017,10 +1097,11 @@ async def main():
         "Pointsbet": pb_basketball_markets,
         "Unibet": ub_basketball_markets,
         "Palmerbet": palm_basketball_markets,
-        "Betright": br_basketball_markets
+        "Betright": br_basketball_markets,
+        "SurgeBet": surge_basketball_markets
     }
     
-    price_cols = ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright"]
+    price_cols = ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright", "SurgeBet"]
     
     process_odds(bookmakers, price_cols, table_name="Basketball Odds")
     
