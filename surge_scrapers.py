@@ -62,12 +62,12 @@ class SurgeSportsScraper:
             prices = []
             results = []
             
-            if market and game.get("markets")[0] != market:
+            if market and game.get("markets")[0].get("name") != market:
                 continue
             
             outcomes = game.get("markets")[0]['outcomes']
             
-            if any(outcome.get("isOpenForBetting") != 'true' for outcome in outcomes):
+            if any(outcome.get("isOpenForBetting") != True for outcome in outcomes):
                 continue
             
             for outcome in outcomes:

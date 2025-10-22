@@ -1045,10 +1045,7 @@ async def main():
     sb_scraper = sb.SBSportsScraper(get_sportsbet_url(sportId=63),  chosen_date=chosen_date)
     sb_basketball_other_markets = await sb_scraper.SPORTSBET_scraper()
     
-    sb_basketball_markets = pd.concat(
-        [sb_basketball_us_markets, sb_basketball_other_markets],
-        ignore_index=True
-    )    
+    sb_basketball_markets = {**sb_basketball_us_markets, **sb_basketball_other_markets}
     
     time.sleep(5)
 
