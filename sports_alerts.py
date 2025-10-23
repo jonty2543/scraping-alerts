@@ -1083,7 +1083,7 @@ async def main():
     surge_basketball_markets = {}
     for comp_id in surge_basketball_compids:
         surge_scraper = ss.SurgeSportsScraper(get_surge_url('basketball', comp_id),  chosen_date=chosen_date)
-        comp_markets = await surge_scraper.Surge_scrape(market ='Match Result')
+        comp_markets = await surge_scraper.Surge_scrape(market ='Money Line')
         surge_basketball_markets.update(comp_markets)
         
     time.sleep(5)
