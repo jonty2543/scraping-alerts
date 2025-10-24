@@ -585,14 +585,18 @@ async def main():
         prices = flucs_long[['Match', 'Result', 'Bookie', 'Price', 'Time', 'Sport']]
         
         agg_prices = (
-            prices.loc[prices['Price'].gt(0) & prices['Price'].notna()].groupby(['Result', 'Match'], as_index=False)
+            prices.loc[prices['Price'].gt(0) & prices['Price'].notna()]
+            .sort_values(['Result', 'Match', 'Price'], ascending=[True, True, False])
+            .groupby(['Result', 'Match'], as_index=False)
             .agg({
-                'Price': 'mean',      
-                'Time': 'max',      
-                'Sport': 'max'      
+                'Price': ['mean', 'max'],
+                'Bookie': 'first',
+                'Time': 'max',
+                'Sport': 'max'
             })
-            .rename(columns={'Price': 'Price', 'Time': 'Time', 'Sport': 'Sport'})
         )
+        
+        agg_prices.columns = ['Result', 'Match', 'Average Price', 'Best Price', 'Best Bookie', 'Time', 'Sport']
         
         records_prices = agg_prices.to_dict(orient="records")
         
