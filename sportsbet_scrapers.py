@@ -7,6 +7,8 @@ from loguru                       import logger
 from random                       import randrange
 from playwright_stealth           import stealth_async
 from playwright.async_api         import async_playwright
+from datetime import datetime
+import pytz
 
 class SBRacingScraper:
     def __init__(self, url, race_code, chosen_date):
@@ -200,7 +202,16 @@ class SBSportsScraper:
                     
                 if market.get("eventSort") != 'MTCH':
                     continue
-                    
+                
+                utc_ts = market.get("startTime")  # e.g., 1761371400 (Unix timestamp)
+                brisbane = pytz.timezone("Australia/Brisbane")
+                
+                # Convert Unix timestamp (UTC) → Brisbane datetime
+                utc_dt = datetime.utcfromtimestamp(utc_ts).replace(tzinfo=pytz.utc)
+                brisbane_dt = utc_dt.astimezone(brisbane)
+                brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
+
+                                    
                 primaryMarket = market['primaryMarket']
                 
                 selections = primaryMarket['selections']
@@ -215,7 +226,7 @@ class SBSportsScraper:
                     results.append(result)
                     prices.append(price)
                 
-                win_market[market_name] = {
+                win_market[market_name, brisbane_date] = {
                     result: price for result, price in zip(results, prices)
                 }
                 
@@ -259,6 +270,15 @@ class SBSportsScraper:
                 
                 if primaryMarket['name'] != "Win-Draw-Win":
                     continue
+                                
+                utc_ts = market.get("startTime")  # e.g., 1761371400 (Unix timestamp)
+                brisbane = pytz.timezone("Australia/Brisbane")
+                
+                # Convert Unix timestamp (UTC) → Brisbane datetime
+                utc_dt = datetime.utcfromtimestamp(utc_ts).replace(tzinfo=pytz.utc)
+                brisbane_dt = utc_dt.astimezone(brisbane)
+                brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
+
                 
                 selections = primaryMarket['selections']
                 market_name = market['displayName']
@@ -272,7 +292,7 @@ class SBSportsScraper:
                     results.append(result)
                     prices.append(price)
                 
-                win_market[market_name] = {
+                win_market[market_name, brisbane_date] = {
                     result: price for result, price in zip(results, prices)
                 }
                 
@@ -314,6 +334,15 @@ class SBSportsScraper:
                 event_id = event.get("id")
                 if not event_id:
                     continue
+                                
+                utc_ts = event.get("startTime")  # e.g., 1761371400 (Unix timestamp)
+                brisbane = pytz.timezone("Australia/Brisbane")
+                
+                # Convert Unix timestamp (UTC) → Brisbane datetime
+                utc_dt = datetime.utcfromtimestamp(utc_ts).replace(tzinfo=pytz.utc)
+                brisbane_dt = utc_dt.astimezone(brisbane)
+                brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
+
     
                 # Step 3: Fetch the market groupings for this event
                 market_url = f"https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Events/{event_id}/MarketGroupings/229/Markets"
@@ -327,7 +356,7 @@ class SBSportsScraper:
                     if market.get("name") == "Draw No Bet":
                         selections = market.get("selections", [])
                         prices = {sel["name"]: sel["price"]["winPrice"] for sel in selections}
-                        draw_no_bet_markets[event.get("displayName")] = prices
+                        draw_no_bet_markets[event.get("displayName"), brisbane_date] = prices
                         break  # Only need the first Draw No Bet market
     
             await browser.close()
@@ -365,6 +394,15 @@ class SBSportsScraper:
                     
                     event_name = event['name']
                     
+                    utc_ts = event.get("startTime")  # e.g., 1761371400 (Unix timestamp)
+                    brisbane = pytz.timezone("Australia/Brisbane")
+                    
+                    # Convert Unix timestamp (UTC) → Brisbane datetime
+                    utc_dt = datetime.utcfromtimestamp(utc_ts).replace(tzinfo=pytz.utc)
+                    brisbane_dt = utc_dt.astimezone(brisbane)
+                    brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
+
+                    
                     if event.get("hasBIRStarted") == 'true':
                         continue
                     
@@ -381,7 +419,7 @@ class SBSportsScraper:
                             results.append(result)
                             prices.append(price)
                         
-                        win_market[event_name] = {
+                        win_market[event_name, brisbane_date] = {
                             result: price for result, price in zip(results, prices)
                         }
                     

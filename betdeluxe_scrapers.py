@@ -6,6 +6,8 @@ from loguru                       import logger
 from random                       import randrange
 from playwright_stealth           import stealth_async
 from playwright.async_api         import async_playwright
+from datetime import datetime
+from zoneinfo import ZoneInfo
  
 class BDSportsScraper:
     def __init__(self, url, chosen_date):
@@ -56,6 +58,11 @@ class BDSportsScraper:
     
                 for event in events["data"]["events"]:
                     event_name = event.get("name")
+                    
+                    date = event.get("advertisedStartTimeUtc")
+                    dt_utc = datetime.fromisoformat(date.replace("Z", "+00:00"))
+                    brisbane_dt = dt_utc.astimezone(ZoneInfo("Australia/Brisbane"))
+                    brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
     
                     prices = []
                     results = []
@@ -66,7 +73,7 @@ class BDSportsScraper:
                                 prices.append(outcome.get("price"))
                                 results.append(outcome.get("name"))
     
-                    win_market[event_name] = {
+                    win_market[event_name, brisbane_date] = {
                         result: price for result, price in zip(results, prices)
                     }
     

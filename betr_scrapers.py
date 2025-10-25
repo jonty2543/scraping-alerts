@@ -30,23 +30,38 @@ class BetrSportsScraper:
         win_market = {}
 
         async with async_playwright() as p:
+            # Launch browser
             browser = await p.chromium.launch(headless=True)
             ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
             context = await browser.new_context(user_agent=ua)
             page = await context.new_page()
-
-            response = await page.request.get(
-                self.url,
-                headers={"User-Agent": ua, "Accept": "application/json"}
-            )
-
-            if response.status != 200:
-                logger.error(f"Failed to fetch markets, status: {response.status}")
+    
+            try:
+                # Step 1: Navigate to homepage to get cookies/session
+                await page.goto("https://www.bluebet.com.au/")
+                
+                # Optional: wait for some element that ensures JS executed
+                await page.wait_for_timeout(2000)  # 2 sec wait
+    
+                # Step 2: Make the API request using the same context (with cookies)
+                headers = {
+                    "User-Agent": ua,
+                    "Accept": "application/json, text/plain, */*",
+                    "Referer": "https://www.bluebet.com.au/",
+                    "Origin": "https://www.bluebet.com.au",
+                }
+    
+                response = await page.request.get(self.url, headers=headers)
+    
+                if response.status != 200:
+                    logger.error(f"Failed to fetch markets, status: {response.status}")
+                    return None
+    
+                all_markets = await response.json()
+                return all_markets
+    
+            finally:
                 await browser.close()
-                return win_market
-
-            all_markets = await response.json()
-            await browser.close()
 
         # Regex to detect lines like "-3.5" or "+2"
         line_regex = re.compile(r'[-+]\d+(\.\d+)?')

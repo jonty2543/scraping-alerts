@@ -7,6 +7,8 @@ from loguru                       import logger
 from random                       import randrange
 from playwright_stealth           import stealth_async
 from playwright.async_api         import async_playwright
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 class BRSportsScraper:
     def __init__(self, url, chosen_date):
@@ -60,6 +62,11 @@ class BRSportsScraper:
                             for event in cat.get("masterEvents", []):                        
                                 match = event.get("masterEventName")
                                 
+                                date = event.get("maxAdvertisedStartTimeUtc")
+                                dt_utc = datetime.fromisoformat(date.replace("Z", "+00:00"))
+                                brisbane_dt = dt_utc.astimezone(ZoneInfo("Australia/Brisbane"))
+                                brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
+                                
                                 prices = []
                                 results = []
                                 
@@ -72,7 +79,7 @@ class BRSportsScraper:
                                     results.append(result)
                                     prices.append(price)
                                 
-                                win_market[match] = {
+                                win_market[match, brisbane_date] = {
                                    result: price for result, price in zip(results, prices)
                                 }                     
 
@@ -119,6 +126,11 @@ class BRSportsScraper:
                             for event in cat.get("masterEvents", []):                        
                                 match = event.get("masterEventName")
                                 
+                                date = event.get("maxAdvertisedStartTimeUtc")
+                                dt_utc = datetime.fromisoformat(date.replace("Z", "+00:00"))
+                                brisbane_dt = dt_utc.astimezone(ZoneInfo("Australia/Brisbane"))
+                                brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
+                                
                                 prices = []
                                 results = []
                                 
@@ -131,7 +143,7 @@ class BRSportsScraper:
                                     results.append(result)
                                     prices.append(price)
                                 
-                                win_market[match] = {
+                                win_market[match, brisbane_date] = {
                                    result: price for result, price in zip(results, prices)
                                 }                     
 

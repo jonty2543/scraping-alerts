@@ -6,6 +6,8 @@ from loguru                       import logger
 from random                       import randrange
 from playwright_stealth           import stealth_async
 from playwright.async_api         import async_playwright
+from datetime import datetime
+from zoneinfo import ZoneInfo
  
 class SurgeSportsScraper:
     def __init__(self, url, chosen_date):
@@ -70,6 +72,11 @@ class SurgeSportsScraper:
             if any(outcome.get("isOpenForBetting") != True for outcome in outcomes):
                 continue
             
+            date = game.get("advertisedStartTimeUtc")
+            dt_utc = datetime.fromisoformat(date.replace("Z", "+00:00"))
+            brisbane_dt = dt_utc.astimezone(ZoneInfo("Australia/Brisbane"))
+            brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
+            
             for outcome in outcomes:
                 
                 name = outcome.get('name')
@@ -78,7 +85,7 @@ class SurgeSportsScraper:
                 results.append(name)
                 prices.append(price)
             
-            win_market[match] = {res: price for res, price in zip(results, prices)}
+            win_market[match, brisbane_date] = {res: price for res, price in zip(results, prices)}
             
         
         return win_market

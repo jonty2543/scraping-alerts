@@ -6,7 +6,9 @@ from loguru                       import logger
 from random                       import randrange
 from playwright_stealth           import stealth_async
 from playwright.async_api         import async_playwright
- 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 class PalmerBetSportsScraper:
     def __init__(self, url, chosen_date):
         """
@@ -62,6 +64,11 @@ class PalmerBetSportsScraper:
             if comp:
                 if game['paths'][2]['title'] != comp:
                     continue
+                
+            date = game.get("startTime")
+            dt_utc = datetime.fromisoformat(date.replace("Z", "+00:00"))
+            brisbane_dt = dt_utc.astimezone(ZoneInfo("Australia/Brisbane"))
+            brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
                     
             prices = []
             results = []
@@ -84,7 +91,7 @@ class PalmerBetSportsScraper:
             match = " vs ".join(results[:2])
     
             # Store outcome-price pairs in dict
-            win_market[match] = {res: price for res, price in zip(results, prices)}
+            win_market[match, brisbane_date] = {res: price for res, price in zip(results, prices)}
                   
         return win_market
     

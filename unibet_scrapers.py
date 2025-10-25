@@ -6,6 +6,8 @@ from loguru                       import logger
 from random                       import randrange
 from playwright_stealth           import stealth_async
 from playwright.async_api         import async_playwright
+from datetime import datetime
+from zoneinfo import ZoneInfo
  
 class UBSportsScraper:
     def __init__(self, url, chosen_date):
@@ -62,11 +64,16 @@ class UBSportsScraper:
                         continue
                         
                     match_name = event.get("englishName") or event.get("name")
+                    
+                    date = event.get("start")
+                    dt_utc = datetime.fromisoformat(date.replace("Z", "+00:00"))
+                    brisbane_dt = dt_utc.astimezone(ZoneInfo("Australia/Brisbane"))
+                    brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
 
                     if not match_name:
                         continue
 
-                    win_market.setdefault(match_name, {})
+                    win_market.setdefault((match_name, brisbane_date), {})
 
                     for bet_offer in comp.get("betOffers", []):
                         bet_type = bet_offer.get("betOfferType", {}).get("englishName", "")
@@ -75,9 +82,9 @@ class UBSportsScraper:
                                 player = outcome.get("englishLabel")
                                 odds = outcome.get("oddsDecimal")
                                 try:
-                                    win_market[match_name][player] = float(odds)
+                                    win_market[match_name, brisbane_date][player] = float(odds)
                                 except (TypeError, ValueError):
-                                    win_market[match_name][player] = None
+                                    win_market[match_name, brisbane_date][player] = None
 
         return win_market
     
@@ -125,8 +132,13 @@ class UBSportsScraper:
 
                     if not match_name:
                         continue
+                    
+                    date = event.get("start")
+                    dt_utc = datetime.fromisoformat(date.replace("Z", "+00:00"))
+                    brisbane_dt = dt_utc.astimezone(ZoneInfo("Australia/Brisbane"))
+                    brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
 
-                    win_market.setdefault(match_name, {})
+                    win_market.setdefault((match_name, brisbane_date), {})
 
                     for bet_offer in comp.get("betOffers", []):
                         bet_type = bet_offer.get("betOfferType", {}).get("englishName", "")
@@ -135,9 +147,9 @@ class UBSportsScraper:
                                 player = outcome.get("participant")
                                 odds = outcome.get("oddsDecimal")
                                 try:
-                                    win_market[match_name][player] = float(odds)
+                                    win_market[match_name, brisbane_date][player] = float(odds)
                                 except (TypeError, ValueError):
-                                    win_market[match_name][player] = None
+                                    win_market[match_name, brisbane_date][player] = None
 
         return win_market
     
@@ -182,6 +194,11 @@ class UBSportsScraper:
             for game in (group.get("events") or []):
                 event = game.get("event", {})
                 
+                date = event.get("start")
+                dt_utc = datetime.fromisoformat(date.replace("Z", "+00:00"))
+                brisbane_dt = dt_utc.astimezone(ZoneInfo("Australia/Brisbane"))
+                brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
+                
                 if event.get("state") != 'NOT_STARTED':
                     continue
                     
@@ -190,7 +207,7 @@ class UBSportsScraper:
                 if not match_name:
                     continue
 
-                win_market.setdefault(match_name, {})
+                win_market.setdefault((match_name, brisbane_date), {})
 
                 for bet_offer in game.get("betOffers", []):
                     bet_type = bet_offer.get("betOfferType", {}).get("englishName", "")
@@ -199,9 +216,9 @@ class UBSportsScraper:
                             team = outcome.get("englishLabel")
                             odds = outcome.get("oddsDecimal")
                             try:
-                                win_market[match_name][team] = float(odds)
+                                win_market[match_name, brisbane_date][team] = float(odds)
                             except (TypeError, ValueError):
-                                win_market[match_name][team] = None
+                                win_market[match_name, brisbane_date][team] = None
 
         return win_market
     
@@ -245,11 +262,16 @@ class UBSportsScraper:
                     continue
                     
                 match_name = event.get("englishName") or event.get("name")
+                
+                date = event.get("start")
+                dt_utc = datetime.fromisoformat(date.replace("Z", "+00:00"))
+                brisbane_dt = dt_utc.astimezone(ZoneInfo("Australia/Brisbane"))
+                brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
         
                 if not match_name:
                     continue
         
-                win_market.setdefault(match_name, {})
+                win_market.setdefault((match_name, brisbane_date), {})
         
                 for bet_offer in comp.get("betOffers", []):
                     bet_type = bet_offer.get("betOfferType", {}).get("englishName", "")
@@ -258,9 +280,9 @@ class UBSportsScraper:
                             team = outcome.get("participant") or outcome.get("englishLabel") or ""
                             odds = outcome.get("oddsDecimal")
                             try:
-                                win_market[match_name][team] = float(odds)
+                                win_market[match_name, brisbane_date][team] = float(odds)
                             except (TypeError, ValueError):
-                                win_market[match_name][team] = None
+                                win_market[match_name, brisbane_date][team] = None
         
         
         for group in groups:
