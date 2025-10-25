@@ -583,6 +583,18 @@ def process_odds(
     for col in ['Match', 'Date', 'Result'] + price_cols:
         if col not in current_df.columns:
             current_df[col] = None
+            
+    dupes = df_mapped[df_mapped.duplicated(subset=["Match", "Date", "Result"], keep=False)]
+    if not dupes.empty:
+        logger.warning(f"⚠️ Found {len(dupes)} duplicate (Match, Date, Result) rows before insert.")
+        print(dupes[["Match", "Date", "Result"]])
+        
+    df_mapped["Date"] = pd.to_datetime(df_mapped["Date"]).dt.strftime("%Y-%m-%d")
+
+    df_mapped = df_mapped.drop_duplicates(
+        subset=["Match", "Date", "Result"],
+        keep="last"   # keep last so newer odds override older ones
+    ).reset_index(drop=True)
 
     # Convert to dict records for table insert
     df_mapped = make_json_safe(df_mapped)
