@@ -337,7 +337,7 @@ async def main():
     
     logger.info(f"Scraping Sportsbet E Sports Data")
     sb_scraper = sb.SBSportsScraper(f.get_sportsbet_url(sportId=206),  chosen_date=chosen_date)
-    sb_esports_markets = await sb_scraper.SPORTSBET_scraper()
+    sb_esports_markets = await sb_scraper.SPORTSBET_scraper(market_type='Match Betting')
     
     time.sleep(5)
     
