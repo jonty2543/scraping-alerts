@@ -435,9 +435,9 @@ async def main():
     
     logger.info(f"Scraping Sportsbet Basketball Data")
     sb_scraper = sb.SBSportsScraper(f.get_sportsbet_url(sportId=16),  chosen_date=chosen_date)
-    sb_basketball_us_markets = await sb_scraper.SPORTSBET_scraper(market='Match Betting')
+    sb_basketball_us_markets = await sb_scraper.SPORTSBET_scraper(market_type='Match Betting')
     sb_scraper = sb.SBSportsScraper(f.get_sportsbet_url(sportId=63),  chosen_date=chosen_date)
-    sb_basketball_other_markets = await sb_scraper.SPORTSBET_scraper(market='Match Betting')
+    sb_basketball_other_markets = await sb_scraper.SPORTSBET_scraper(market_type='Match Betting')
     
     sb_basketball_markets = {**sb_basketball_us_markets, **sb_basketball_other_markets}
     
