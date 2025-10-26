@@ -239,12 +239,12 @@ async def main():
     palm_union_markets = await palm_scraper.PalmerBet_scrape()
     
     time.sleep(5)
-    
+    '''
     logger.info(f"Scraping Betr union Data")
     betr_scraper = betr.BetrSportsScraper(betr_union_url,  chosen_date=chosen_date)
     betr_union_markets = await betr_scraper.Betr_scrape_union()
     
-    time.sleep(5)
+    time.sleep(5)'''
     
     logger.info("Scraping betright union data")
     br_scraper = br.BRSportsScraper(f.get_betright_url(105),  chosen_date=chosen_date)
@@ -305,12 +305,12 @@ async def main():
     palm_nrl_markets = await palm_scraper.PalmerBet_scrape(comp='Australia National Rugby League')
     
     time.sleep(5)
-    
+    '''
     logger.info(f"Scraping Betr NRL Data")
     betr_scraper = betr.BetrSportsScraper(betr_nrl_url,  chosen_date=chosen_date)
     betr_nrl_markets = await betr_scraper.Betr_scrape_union(comp='NRL Telstra Premiership')
     
-    time.sleep(5)
+    time.sleep(5)'''
     
     logger.info("Scraping betright NRL data")
     br_scraper = br.BRSportsScraper(f.get_betright_url(102),  chosen_date=chosen_date)
