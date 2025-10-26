@@ -156,19 +156,24 @@ def fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=80, result
     - Returns merged base_df and market % DataFrame
     """
 
+    import pandas as pd
+    from rapidfuzz import fuzz, process
+
     # Return empty if all dfs are empty
     if all(df.empty for df in dfs):
-        return pd.DataFrame(columns=['match', 'date', 'result', 'mkt_percent', 'best_price', 'best_bookie']), pd.DataFrame()
+        cols = ['match', 'date', 'result', 'mkt_percent', 'best_price', 'best_bookie']
+        return pd.DataFrame(columns=cols), pd.DataFrame(columns=cols)
 
-    # Pick the base_df as the longest DataFrame (most rows)
+    # Pick the base_df as the longest non-empty DataFrame
     non_empty_dfs = [(df, name) for df, name in zip(dfs, bookie_names) if not df.empty]
     if not non_empty_dfs:
-        return pd.DataFrame(columns=['match', 'date', 'result', 'mkt_percent', 'best_price', 'best_bookie']), pd.DataFrame()
+        cols = ['match', 'date', 'result', 'mkt_percent', 'best_price', 'best_bookie']
+        return pd.DataFrame(columns=cols), pd.DataFrame(columns=cols)
 
     base_df, base_bookie = max(non_empty_dfs, key=lambda x: len(x[0]))
     base_df = base_df.copy()
 
-    # Normalize base_df
+    # --- Normalize base_df ---
     if names:
         base_df['match_norm'] = base_df['match'].apply(normalize_players_match)
         base_df['result_norm'] = base_df['result'].apply(normalize_players_result)
@@ -176,10 +181,10 @@ def fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=80, result
         base_df['match_norm'] = base_df['match'].apply(normalize_match)
         base_df['result_norm'] = base_df['result'].apply(normalize_result)
 
-    # Ensure date column is datetime if present
     if 'date' in base_df.columns:
         base_df['date'] = pd.to_datetime(base_df['date'])
 
+    # Initialize fuzzy columns
     base_df['match_fuzzy'] = base_df['match_norm']
     base_df['result_fuzzy'] = base_df['result_norm']
 
@@ -205,6 +210,11 @@ def fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=80, result
         if 'date' in other_df.columns:
             other_df['date'] = pd.to_datetime(other_df['date'])
 
+        # Initialize empty fuzzy columns upfront to avoid KeyErrors later
+        for col in ['match_fuzzy', 'result_fuzzy']:
+            if col not in other_df.columns:
+                other_df[col] = None
+
         # --- Fuzzy match by (match, date) ---
         other_matches = other_df[['match_norm', 'date']].dropna().drop_duplicates()
         match_map = {}
@@ -212,7 +222,6 @@ def fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=80, result
         for _, base_row in base_df[['match_fuzzy', 'date']].dropna().drop_duplicates().iterrows():
             base_match, base_date = base_row['match_fuzzy'], base_row['date']
 
-            # Filter other matches to same date
             same_date_matches = other_matches[other_matches['date'] == base_date]
             if same_date_matches.empty:
                 continue
@@ -221,8 +230,7 @@ def fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=80, result
             if best_mtch and best_mtch[1] >= match_threshold:
                 match_map[(base_match, base_date)] = best_mtch[0]
 
-        # Map back fuzzy matches by both match + date
-        other_df['match_fuzzy'] = None
+        # Map fuzzy matches back by (match, date)
         for (base_match, base_date), other_match in match_map.items():
             mask = (other_df['match_norm'] == other_match) & (other_df['date'] == base_date)
             other_df.loc[mask, 'match_fuzzy'] = base_match
@@ -240,13 +248,17 @@ def fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=80, result
                 if best_res and best_res[1] >= result_threshold:
                     result_map[res] = best_res[0]
 
-            other_df.loc[other_rows.index, 'result_fuzzy'] = other_rows['result_norm'].map(
-                {v: k for k, v in result_map.items()}
-            )
+            # Assign mapped results safely
+            if result_map:
+                inv_map = {v: k for k, v in result_map.items()}
+                other_df.loc[other_rows.index, 'result_fuzzy'] = other_rows['result_norm'].map(inv_map)
 
-        # --- Merge this bookie into base_df ---
+        # --- Clean up NaNs and prepare for merge ---
         for col in ['match_fuzzy', 'result_fuzzy']:
-            other_df[col] = other_df[col].astype(str).replace('nan', '')
+            if col not in other_df.columns:
+                other_df[col] = ''
+            else:
+                other_df[col] = other_df[col].astype(str).replace('nan', '')
             base_df[col] = base_df[col].astype(str).replace('nan', '')
 
         merge_keys = ['match_fuzzy', 'result_fuzzy']
@@ -259,7 +271,7 @@ def fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=80, result
         else:
             base_df[bookie] = 0.0
 
-    # Ensure all bookie columns exist
+    # --- Ensure all bookie columns exist ---
     for bookie in bookie_names:
         if bookie not in base_df.columns:
             base_df[bookie] = 0.0
