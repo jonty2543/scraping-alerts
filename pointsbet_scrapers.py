@@ -134,8 +134,7 @@ class PBSportsScraper:
                         prices.append(price)
                     
                     win_market[market_name, brisbane_date] = {
-                        results[0]: prices[0],
-                        results[1]: prices[1]
+                        result: price for result, price in zip(results, prices)
                     }
                 
         return win_market
