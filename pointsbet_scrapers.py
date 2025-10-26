@@ -86,7 +86,7 @@ class PBSportsScraper:
         Nrl Pointsbet Scraper.
         """
         # Input checking
-
+        
         async with async_playwright() as p:
             # Stealth Browser Set Up to Access Sportsbet API (Not Needed but just copied over from TAB)
             browser = await p.chromium.launch(headless=True)
@@ -101,11 +101,9 @@ class PBSportsScraper:
                 await browser.close()
                 
             win_market = {}
-            
             events = all_markets['events']
                 
-            for event in events:
-                
+            for event in events[:1]:
                 markets = event['specialFixedOddsMarkets']
                 
                 if event.get("isLive") is True:
@@ -115,13 +113,19 @@ class PBSportsScraper:
                 dt_utc = datetime.fromisoformat(date.replace("Z", "+00:00"))
                 brisbane_dt = dt_utc.astimezone(ZoneInfo("Australia/Brisbane"))
                 brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
-                
+               
                 for market in markets:
                     
                     if market['eventClass'] != market_type:
                         continue
-                
                     outcomes = market['outcomes']
+                    
+                    if len(outcomes) < 2:
+                        logger.warning(
+                            f"Skipping {market.get('name')} — only {len(outcomes)} outcome(s)."
+                        )
+                        continue
+
                     market_name = event['name']
                                     
                     prices = []
@@ -131,8 +135,8 @@ class PBSportsScraper:
                         result = outcome['name']
                         price = outcome['price']
                         results.append(result)
-                        prices.append(price)
-                    
+                        prices.append(price)                                  
+                        
                     win_market[market_name, brisbane_date] = {
                         result: price for result, price in zip(results, prices)
                     }

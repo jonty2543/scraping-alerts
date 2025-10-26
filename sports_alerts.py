@@ -446,12 +446,11 @@ async def main():
     pb_basketball_compids = f.get_pb_comps('basketball')  
     pb_basketball_markets = {}   
     logger.info(f"Scraping Pointsbet basketball Data")
-    for comp_id in pb_basketball_compids:      
+    for comp_id in pb_basketball_compids:  
+        print(comp_id)
         pb_scraper = pb.PBSportsScraper(f.get_pb_url(comp_id),  chosen_date=chosen_date)
         comp_markets = await pb_scraper.POINTSBET_scrape_nrl(market_type='Head to Head')
         pb_basketball_markets.update(comp_markets)
-        
-    time.sleep(5)
     
     logger.info(f"Scraping Unibet Basketball Data")
     ub_scraper = ub.UBSportsScraper(f.get_ub_url('basketball'), chosen_date=chosen_date)
