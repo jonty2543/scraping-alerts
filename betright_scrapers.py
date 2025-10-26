@@ -24,7 +24,7 @@ class BRSportsScraper:
         # self.jurisdiction = self.map_jurisdiction(jurisdiction)
         
     
-    async def BETRIGHT_scraper(self, competition_id='none', retries=3, delay=2):
+    async def BETRIGHT_scraper(self, market_type=None, competition_id='none', retries=3, delay=2):
         """
         Union Sportsbet Scraper.
         """
@@ -71,8 +71,9 @@ class BRSportsScraper:
                                 results = []
                                 
                                 for market in event.get("markets"):
-                                    if market.get("marketDesc", "").lower() != "win":
-                                        continue
+                                    if market_type != None:
+                                        if market.get("eventName") != market_type:
+                                            continue
                                     
                                     result = market.get("outcomeName")
                                     price = market.get("price")

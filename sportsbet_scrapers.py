@@ -170,7 +170,7 @@ class SBSportsScraper:
         self.chosen_date = chosen_date
         # self.jurisdiction = self.map_jurisdiction(jurisdiction)
     
-    async def SPORTSBET_scraper(self, competition_id='none', retries=3, delay=2):
+    async def SPORTSBET_scraper(self, market_type=None, competition_id='none', retries=3, delay=2):
         """
         Union Sportsbet Scraper.
         """
@@ -198,6 +198,10 @@ class SBSportsScraper:
                 
                 if competition_id != 'none':
                     if market.get("competitionId") != competition_id:
+                        continue
+                    
+                if market_type != None:
+                    if market['primaryMarket']['name'] != market_type:
                         continue
                     
                 if market.get("eventSort") != 'MTCH':
