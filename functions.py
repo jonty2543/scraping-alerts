@@ -617,7 +617,8 @@ def process_odds(
         df_mapped[['Match', 'Date', 'Result'] + price_cols],
         current_df[['Match', 'Date', 'Result'] + price_cols],
         on=['Match', 'Date', 'Result'],
-        suffixes=('_new', '_old')
+        suffixes=('_new', '_old'),
+        how='outer'
     )
 
     new_prices = flucs.melt(
