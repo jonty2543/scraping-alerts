@@ -27,6 +27,11 @@ import time
 import boto3
 from io import StringIO
 
+import math
+import json
+from typing import Dict, Iterable, List, Optional
+from zoneinfo import ZoneInfo
+
 chosen_date = datetime.now(pytz.timezone("Australia/Brisbane")).date().strftime("%Y-%m-%d")
 offset = (datetime.now(pytz.timezone("Australia/Brisbane")).date().weekday() - 0) % 7  
 monday = datetime.now(pytz.timezone("Australia/Brisbane")).date() - timedelta(days=offset)
@@ -58,6 +63,49 @@ WEBHOOK_TEST = "https://discord.com/api/webhooks/1408057314455588864/jAclediH3bd
 SUPABASE_URL = "https://glrzwxpxkckxaogpkwmn.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdscnp3eHB4a2NreGFvZ3Brd21uIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NjA3OTU3NiwiZXhwIjoyMDcxNjU1NTc2fQ.YOF9ryJbhBoKKHT0n4eZDMGrR9dczR8INHVs_By4vRU"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+BASE_URL = "https://gamma-api.polymarket.com"
+CLOB_URL = "https://clob.polymarket.com"
+SESSION = requests.Session()
+SESSION.headers.update({
+    "User-Agent": "pm-sports-orderbook/0.1",
+    "Accept": "application/json"
+})
+
+def get_no_vig_odds_multiway(odds: list):
+    """
+    :param odds: List of original odds for a multi-way market.
+    :return: Tuple of no-vig (fair) odds calculated using the iterative method.
+    """
+    c, target_overround, accuracy, current_error = 1, 0, 3, 1000
+    max_error = (10 ** (-accuracy)) / 2
+
+    fair_odds = list()
+    while current_error > max_error:
+
+        f = - 1 - target_overround
+        for o in odds:
+            f += (1 / o) ** c
+
+        f_dash = 0
+        for o in odds:
+            f_dash += ((1 / o) ** c) * (-math.log(o))
+
+        h = -f / f_dash
+        c = c + h
+
+        t = 0
+        for o in odds:
+            t += (1 / o) ** c
+        current_error = abs(t - 1 - target_overround)
+
+        fair_odds = list()
+        for o in odds:
+            fair_odds.append(round(o ** c, 3))
+
+    return tuple(fair_odds)
+
+print(get_no_vig_odds_multiway([2.56, 1.51]))
 
 
 def normalize_match(match):
@@ -749,4 +797,229 @@ def result_searcher(df, result):
     
 def match_searcher(df, match):
     print(df[df['match'] == match])
+    
+    
+#Polymarket functions
+
+def _get(url: str, params: dict | None = None, retries: int = 3, backoff: float = 0.8):
+    """Generic GET with retry."""
+    for i in range(retries):
+        r = SESSION.get(url, params=params, timeout=20)
+        if r.status_code == 200:
+            return r.json()
+        if r.status_code in (429, 500, 502, 503, 504) and i < retries - 1:
+            time.sleep(backoff * (i + 1))
+            continue
+        raise RuntimeError(f"GET {url} failed [{r.status_code}]: {r.text[:200]}")
+
+
+def iter_markets(tag_id: Optional[int] = None, limit: int = 100, types: Optional[List[str]] = None) -> Iterable[dict]:
+    """Page through /markets (active only)."""
+    offset = 0
+    while True:
+        params = {
+            "closed": "false",
+            "limit": limit,
+            "offset": offset,
+            "order": "id",
+            "ascending": "false",
+        }
+        if tag_id is not None:
+            params["tag_id"] = tag_id
+        if types:
+            params["sports_market_types"] = types
+
+        data = _get(f"{BASE_URL}/markets", params=params)
+        if not isinstance(data, list) or not data:
+            break
+
+        for m in data:
+            if str(m.get("category", "")).lower().startswith("sports") or m.get("sportsMarketType"):
+                yield m
+
+        if len(data) < limit:
+            break
+        offset += limit
+
+
+def parse_event_date(m: dict, tz: str) -> Optional[str]:
+    """Convert event start to local date."""
+    z = ZoneInfo(tz)
+    for key in ["gameStartTime", "eventStartTime", "startDateIso", "startDate"]:
+        val = m.get(key)
+        if val:
+            try:
+                dt_utc = datetime.fromisoformat(val.replace("Z", "+00:00"))
+                return dt_utc.astimezone(z).date().isoformat()
+            except Exception:
+                continue
+    return None
+
+
+def get_orderbook_summary(token_id: str) -> tuple[Optional[float], Optional[float]]:
+    """
+    Fetch tradable buy/sell prices for a YES token.
+    On Polymarket, 'asks' are sell offers (usually high),
+    'bids' are buy offers (usually low).
+    The UI 'YES price' = highest bid.
+    """
+    try:
+        url = f"{CLOB_URL}/book"
+        params = {"token_id": token_id}
+        data = _get(url, params=params)
+        asks = data.get("asks", [])
+        bids = data.get("bids", [])
+        # reversed: we want to show "ask" = what you can BUY at (highest bid)
+        lowest_ask = float(asks[-1]["price"]) if asks else None   # ✅ use last entry
+        highest_bid = float(bids[-1]["price"]) if bids else None   # ✅ use first entry
+
+        return lowest_ask, highest_bid
+    except Exception:
+        return None, None
+
+def extract_outcome_names(m: dict) -> list[str]:
+    """Return clean outcome names (handles stringified lists like '["Yes","No"]')."""
+    raw = m.get("outcomes")
+
+    # Case 1: list already parsed
+    if isinstance(raw, list):
+        return [o["name"] if isinstance(o, dict) and "name" in o else str(o) for o in raw]
+
+    # Case 2: JSON string like '["Yes","No"]' or '[{"name": "A"},{"name": "B"}]'
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [p["name"] if isinstance(p, dict) and "name" in p else str(p) for p in parsed]
+        except Exception:
+            pass
+
+    # Fallback
+    return []
+
+def build_df(
+    sport: str,
+    tz: str = "Australia/Brisbane",
+    min_liq: Optional[float] = None,
+    types: Optional[List[str]] = None,
+) -> pd.DataFrame:
+    """Return DataFrame of markets with live orderbook prices."""
+    rows: List[dict] = []
+    seen: set[tuple] = set()
+
+    try:
+        tag = _get(f"{BASE_URL}/tags/slug/{sport}")
+    except Exception:
+        print(f"⚠️ Could not find tag for {sport}")
+        return pd.DataFrame()
+
+    for m in iter_markets(tag_id=tag.get("id"), types=types):
+        liq = float(m.get("liquidityNum") or 0)
+        if min_liq and liq < min_liq:
+            continue
+
+        match = m.get("question") or m.get("title") or m.get("slug") or ""
+        print(f"🏟️ {match}")
+        date_str = parse_event_date(m, tz)
+
+        # Extract outcomes + token IDs
+        outcomes = extract_outcome_names(m)
+        # Get token IDs robustly (different field names possible)
+        token_ids = (
+            m.get("clobTokenIds")
+            or m.get("outcomeTokenIds")
+            or [t.get("token_id") for t in m.get("tokens", []) if isinstance(t, dict)]
+            or []
+        )
+        
+        if isinstance(token_ids, str):
+            try:
+                token_ids = json.loads(token_ids)
+            except Exception:
+                token_ids = []
+
+        for idx, outcome in enumerate(outcomes):
+            name = outcome.get("name") if isinstance(outcome, dict) else str(outcome)
+            token_id = str(token_ids[idx]) if idx < len(token_ids) else None
+            if not token_id:
+                continue
+
+            # Fetch real orderbook prices
+            ask, bid = get_orderbook_summary(token_id)
+            key = (m.get("id"), token_id)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            rows.append({
+                "sport": sport,
+                "date": date_str,
+                "match": match,
+                "team": name,
+                "ask": ask,
+                "bid": bid
+            })
+
+        time.sleep(0.25)  # avoid rate limiting
+
+    return pd.DataFrame(rows, columns=["sport", "date", "match", "team", "ask", "bid"])
+
+def rebuild_match_name(group):
+    teams = sorted(group["team"].unique())  # ensure consistent order
+    if len(teams) >= 2:
+        return f"{teams[0]} vs {teams[1]}"
+    elif len(teams) == 1:
+        return teams[0]
+    else:
+        return None
+        
+# Sports mapping
+polymarket_sport_map = {
+    "nba": "Basketball",
+    "wnba": "Basketball",
+    "ncaab": "Basketball",
+    "cbb": "Basketball",
+    "lal": "Basketball",
+    "epl": "Football",
+    "mls": "Football",
+    "ucl": "Football",
+    "uel": "Football",
+    "fl1": "Football",
+    "bun": "Football",
+}
+
+NBA_TEAM_MAP = {
+    "Hawks": "Atlanta Hawks",
+    "Celtics": "Boston Celtics",
+    "Nets": "Brooklyn Nets",
+    "Hornets": "Charlotte Hornets",
+    "Bulls": "Chicago Bulls",
+    "Cavaliers": "Cleveland Cavaliers",
+    "Mavericks": "Dallas Mavericks",
+    "Nuggets": "Denver Nuggets",
+    "Pistons": "Detroit Pistons",
+    "Warriors": "Golden State Warriors",
+    "Rockets": "Houston Rockets",
+    "Pacers": "Indiana Pacers",
+    "Clippers": "Los Angeles Clippers",
+    "Lakers": "Los Angeles Lakers",
+    "Grizzlies": "Memphis Grizzlies",
+    "Heat": "Miami Heat",
+    "Bucks": "Milwaukee Bucks",
+    "Timberwolves": "Minnesota Timberwolves",
+    "Pelicans": "New Orleans Pelicans",
+    "Knicks": "New York Knicks",
+    "Thunder": "Oklahoma City Thunder",
+    "Magic": "Orlando Magic",
+    "76ers": "Philadelphia 76ers",
+    "Sixers": "Philadelphia 76ers",
+    "Suns": "Phoenix Suns",
+    "Blazers": "Portland Trail Blazers",
+    "Trail Blazers": "Portland Trail Blazers",
+    "Kings": "Sacramento Kings",
+    "Spurs": "San Antonio Spurs",
+    "Raptors": "Toronto Raptors",
+    "Jazz": "Utah Jazz",
+    "Wizards": "Washington Wizards",
+}
 

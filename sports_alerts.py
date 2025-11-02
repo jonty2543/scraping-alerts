@@ -29,6 +29,10 @@ import time
 import boto3
 from io import StringIO
 
+import json
+from typing import Dict, Iterable, List, Optional
+from zoneinfo import ZoneInfo
+
 nest_asyncio.apply()
 
 async def main():
@@ -68,6 +72,14 @@ async def main():
     SUPABASE_URL = "https://glrzwxpxkckxaogpkwmn.supabase.co"
     SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdscnp3eHB4a2NreGFvZ3Brd21uIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NjA3OTU3NiwiZXhwIjoyMDcxNjU1NTc2fQ.YOF9ryJbhBoKKHT0n4eZDMGrR9dczR8INHVs_By4vRU"
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    
+    BASE_URL = "https://gamma-api.polymarket.com"
+    CLOB_URL = "https://clob.polymarket.com"
+    SESSION = requests.Session()
+    SESSION.headers.update({
+        "User-Agent": "pm-sports-orderbook/0.1",
+        "Accept": "application/json"
+    })
     
     
     
@@ -479,6 +491,22 @@ async def main():
         surge_basketball_markets.update(comp_markets)
         
     time.sleep(5)
+    
+    logger.info(f"Scraping Polymarket NBA Data")
+    polymarket_nba = f.build_df(sport='nba', tz="Australia/Brisbane", min_liq=None, types=["moneyline"])
+    polymarket_nba["sport"] = 'Basketball'
+    polymarket_nba["decimal_price"] = round(polymarket_nba["ask"].apply(lambda x: 1 / x if x and x > 0 else None), 2)
+    df = polymarket_nba[["match", "date", "team", "decimal_price"]].dropna(subset=["decimal_price"])
+    df['team'] = df["team"].map(f.NBA_TEAM_MAP).fillna(df["team"])
+    
+    match_map = df.groupby("match").apply(f.rebuild_match_name).to_dict()
+    df["match"] = df["match"].map(match_map).fillna(df["match"])
+        
+    polymarket_nba_markets = (
+        df.groupby(["match", "date"])
+        .apply(lambda g: dict(zip(g["team"], g["decimal_price"])))
+        .to_dict()
+    )
 
     # --- Combine bookmaker markets ---
     bookmakers = {
@@ -487,10 +515,11 @@ async def main():
         "Unibet": ub_basketball_markets,
         "Palmerbet": palm_basketball_markets,
         "Betright": br_basketball_markets,
-        "SurgeBet": surge_basketball_markets
+        "SurgeBet": surge_basketball_markets,
+        "Polymarket": polymarket_nba_markets
     }
     
-    price_cols = ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright", "SurgeBet"]
+    price_cols = ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright", "SurgeBet", "Polymarket"]
     
     f.process_odds(bookmakers, price_cols, table_name="Basketball Odds")
     
