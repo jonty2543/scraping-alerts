@@ -494,10 +494,12 @@ async def main():
     
     logger.info(f"Scraping Polymarket NBA Data")
     polymarket_nba = f.build_df(sport='nba', tz="Australia/Brisbane", min_liq=None, types=["moneyline"])
+    print(f'polymarket_nba: {polymarket_nba}')
     polymarket_nba["sport"] = 'Basketball'
     polymarket_nba["decimal_price"] = round(polymarket_nba["ask"].apply(lambda x: 1 / x if x and x > 0 else None), 2)
     df = polymarket_nba[["match", "date", "team", "decimal_price"]].dropna(subset=["decimal_price"])
     df['team'] = df["team"].map(f.NBA_TEAM_MAP).fillna(df["team"])
+    print(f'polymarket df: {df}')
     
     match_map = df.groupby("match").apply(f.rebuild_match_name).to_dict()
     df["match"] = df["match"].map(match_map).fillna(df["match"])
@@ -507,6 +509,7 @@ async def main():
         .apply(lambda g: dict(zip(g["team"], g["decimal_price"])))
         .to_dict()
     )
+    print(f'polymarket_nba_markets: {polymarket_nba_markets}')
 
     # --- Combine bookmaker markets ---
     bookmakers = {

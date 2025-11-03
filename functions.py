@@ -919,7 +919,6 @@ def build_df(
             continue
 
         match = m.get("question") or m.get("title") or m.get("slug") or ""
-        print(f"🏟️ {match}")
         date_str = parse_event_date(m, tz)
 
         # Extract outcomes + token IDs
