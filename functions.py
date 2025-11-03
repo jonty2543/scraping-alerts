@@ -761,8 +761,11 @@ def process_odds(
     supabase.table(table_name).delete().neq("Match", "").execute()
 
     logger.info(f"Inserting fresh {table_name} records...")
-    supabase.table(table_name).insert(records).execute()
-
+    if records:
+        supabase.table(table_name).insert(records).execute()
+    else:
+        print("⚠️ No records to insert. Skipping Supabase insert.")
+    
     # Print some sample market %
     print(mkt_percents[["match", "mkt_percent"]].head(10))
 
