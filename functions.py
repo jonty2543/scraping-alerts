@@ -546,6 +546,31 @@ def make_json_safe(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].dt.strftime("%Y-%m-%d")
     return df
 
+def _cleanup_recent_flucs(supabase, time_threshold, batch_size=1000):
+    # Delete in batches to avoid statement timeouts on large tables.
+    try:
+        while True:
+            res = (
+                supabase.table("Recent Flucs")
+                .select("id")
+                .lt("Time", time_threshold)
+                .limit(batch_size)
+                .execute()
+            )
+            ids = [row.get("id") for row in (res.data or []) if row.get("id") is not None]
+            if res.data and not ids:
+                raise ValueError("Recent Flucs rows missing id column")
+            if not ids:
+                break
+            supabase.table("Recent Flucs").delete().in_("id", ids).execute()
+    except Exception as e:
+        print(f"⚠️ Failed batch cleanup of Recent Flucs: {e}")
+        try:
+            supabase.table("Recent Flucs").delete().lt("Time", time_threshold).execute()
+        except Exception as e2:
+            print(f"⚠️ Failed fallback cleanup of Recent Flucs: {e2}")
+
+
 def process_odds(
     bookmakers: dict,
     price_cols: list,
@@ -754,7 +779,7 @@ def process_odds(
 
     # Clean up old flucs
     time_threshold = (datetime.now(pytz.timezone("Australia/Brisbane")) - timedelta(hours=3)).isoformat()
-    supabase.table("Recent Flucs").delete().lt("Time", time_threshold).execute()
+    _cleanup_recent_flucs(supabase, time_threshold)
 
     # Refresh main odds table
     logger.info(f"Clearing {table_name} table before insert...")
@@ -1024,4 +1049,3 @@ NBA_TEAM_MAP = {
     "Jazz": "Utah Jazz",
     "Wizards": "Washington Wizards",
 }
-
