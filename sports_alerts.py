@@ -41,8 +41,10 @@ async def main():
     chosen_date = datetime.now(pytz.timezone("Australia/Brisbane")).date().strftime("%Y-%m-%d")
     offset = (datetime.now(pytz.timezone("Australia/Brisbane")).date().weekday() - 0) % 7  
     monday = datetime.now(pytz.timezone("Australia/Brisbane")).date() - timedelta(days=offset)
-    one_week = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(14)).date().strftime("%Y-%m-%d")
+    one_week = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(7)).date().strftime("%Y-%m-%d")
     two_week = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(14)).date().strftime("%Y-%m-%d")
+    one_month = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(60)).date().strftime("%Y-%m-%d")
+    
     print(chosen_date)
     print(one_week)
     print(two_week)

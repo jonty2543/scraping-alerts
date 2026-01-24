@@ -35,9 +35,9 @@ from zoneinfo import ZoneInfo
 chosen_date = datetime.now(pytz.timezone("Australia/Brisbane")).date().strftime("%Y-%m-%d")
 offset = (datetime.now(pytz.timezone("Australia/Brisbane")).date().weekday() - 0) % 7  
 monday = datetime.now(pytz.timezone("Australia/Brisbane")).date() - timedelta(days=offset)
-one_week = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(14)).date().strftime("%Y-%m-%d")
+one_week = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(7)).date().strftime("%Y-%m-%d")
 two_week = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(14)).date().strftime("%Y-%m-%d")
-
+one_month = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(60)).date().strftime("%Y-%m-%d")
 
 pb_union_url = f'https://api.au.pointsbet.com/api/mes/v3/events/featured/competition/15797?page=1'
 pb_nrl_url = f'https://api.au.pointsbet.com/api/mes/v3/events/featured/competition/7593?page=1'
@@ -512,7 +512,7 @@ def get_surge_comps(sport):
 
 
 def get_sportsbet_url(sportId: int):
-    return f'https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Events?primaryMarketOnly=true&fromDate={chosen_date}T00:00:00&toDate={one_week}T23:59:59&sportsId={sportId}&numEventsPerClass=2000&detailsLevel=O'
+    return f'https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Events?primaryMarketOnly=true&fromDate={chosen_date}T00:00:00&toDate={one_month}T23:59:59&sportsId={sportId}&numEventsPerClass=2000&detailsLevel=O'
 
 def get_sportsbet_compids(sportId: int):
     url = get_sportsbet_url(sportId)
