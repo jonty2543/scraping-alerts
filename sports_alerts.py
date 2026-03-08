@@ -2,14 +2,14 @@ import pytz
 from datetime import datetime, timedelta
 from loguru import logger
 
-import sportsbet_scrapers as sb
-import pointsbet_scrapers as pb
-import unibet_scrapers as ub
-import PalmerBet_scrapers as palm
-import betr_scrapers as betr
-import betright_scrapers as br
-import betdeluxe_scrapers as bd
-import surge_scrapers as ss
+import scrapers.sportsbet_scrapers as sb
+import scrapers.pointsbet_scrapers as pb
+import scrapers.unibet_scrapers as ub
+import scrapers.PalmerBet_scrapers as palm
+import scrapers.betr_scrapers as betr
+import scrapers.betright_scrapers as br
+import scrapers.betdeluxe_scrapers as bd
+import scrapers.surge_scrapers as ss
 
 import functions as f
 
@@ -66,15 +66,6 @@ async def main():
     sb_ufc_url = 'https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Class/71/Events?displayType=coupon&detailsLevel=O'
 
 
-    WEBHOOK_ARBS = "https://discord.com/api/webhooks/1407711750824132620/dBAZkjoBIHPV-vUNk7C0E4MJ7nUtF1BKd4O1lpHhq_4qbk-47kew9bFmRiSpELAqk6i4"  
-    WEBHOOK_PROBS = "https://discord.com/api/webhooks/1408080883885539439/bAnj7a_NBVxFyXecCMTBw84obdX4OMuO1388GDNfo1ViW4Kmylb0Gc5bITjrfiEOwRNc"  
-    WEBHOOK_TEST = "https://discord.com/api/webhooks/1408057314455588864/jAclediH3bdFu-0PXK4Xbd7wykeU0NgJueMEaEwP8x3vJAExfZ-RFAT0FAdwT-alP2D4"
-
-    # ---- Supabase credentials ----
-    SUPABASE_URL = "https://glrzwxpxkckxaogpkwmn.supabase.co"
-    SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdscnp3eHB4a2NreGFvZ3Brd21uIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NjA3OTU3NiwiZXhwIjoyMDcxNjU1NTc2fQ.YOF9ryJbhBoKKHT0n4eZDMGrR9dczR8INHVs_By4vRU"
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    
     BASE_URL = "https://gamma-api.polymarket.com"
     CLOB_URL = "https://clob.polymarket.com"
     SESSION = requests.Session()
@@ -530,4 +521,3 @@ async def main():
     
 if __name__ == "__main__":
     asyncio.run(main())
-

@@ -103,8 +103,8 @@ class PBSportsScraper:
             win_market = {}
             events = all_markets['events']
                 
-            for event in events[:1]:
-                markets = event['specialFixedOddsMarkets']
+            for event in events:
+                markets = event.get('specialFixedOddsMarkets', [])
                 
                 if event.get("isLive") is True:
                     continue
@@ -115,10 +115,9 @@ class PBSportsScraper:
                 brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
                
                 for market in markets:
-                    
-                    if market['eventClass'] != market_type:
+                    if market.get('eventClass') != market_type and market.get('eventName') != market_type:
                         continue
-                    outcomes = market['outcomes']
+                    outcomes = market.get('outcomes', [])
                     
                     if len(outcomes) < 2:
                         logger.warning(

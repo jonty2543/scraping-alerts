@@ -1,6 +1,7 @@
 import time
 import asyncio
 import traceback
+import re
 
 from loguru                       import logger
 from random                       import randrange
@@ -23,7 +24,7 @@ class PalmerBetSportsScraper:
         # self.jurisdiction = self.map_jurisdiction(jurisdiction)
 
 
-    async def PalmerBet_scrape(self, comp=None, sport=None):
+    async def PalmerBet_scrape(self, comp=None, sport=None, market_type='h2h'):
         """
         NPC PalmerBet Scraper.
         """
@@ -62,7 +63,11 @@ class PalmerBetSportsScraper:
                 continue
             
             if comp:
-                if game['paths'][2]['title'] != comp:
+                game_comp = str((game.get('paths') or [{}, {}, {}])[2].get('title', ''))
+                comp_l = str(comp).lower()
+                game_comp_l = game_comp.lower()
+                is_nrl_alias = ('rugby league' in comp_l and game_comp_l == 'nrl') or (comp_l == 'nrl' and 'rugby league' in game_comp_l)
+                if not (comp_l in game_comp_l or game_comp_l in comp_l or is_nrl_alias):
                     continue
                 
             date = game.get("startTime")
@@ -70,27 +75,49 @@ class PalmerBetSportsScraper:
             brisbane_dt = dt_utc.astimezone(ZoneInfo("Australia/Brisbane"))
             brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
                     
+            home_name = game.get("homeTeam", {}).get("title")
+            away_name = game.get("awayTeam", {}).get("title")
+            match = f"{home_name} vs {away_name}"
+
             prices = []
             results = []
 
-                              
-            for team_key in ["homeTeam", "awayTeam"]:
-                team = game.get(team_key, {})
-                name = team.get("title")
-                price = team.get("win", {}).get("price")
-                
-                results.append(name)
-                prices.append(price)
-            
-            if sport == 'football':
-                draw_data = game.get("draw")
-                if draw_data:  # only add if it exists
-                    results.append("draw")
-                    prices.append(draw_data.get("price"))
-                
-            match = " vs ".join(results[:2])
-    
-            # Store outcome-price pairs in dict
+            if market_type == 'h2h':
+                for team_key in ["homeTeam", "awayTeam"]:
+                    team = game.get(team_key, {})
+                    name = team.get("title")
+                    price = team.get("win", {}).get("price")
+                    results.append(name)
+                    prices.append(price)
+
+                if sport == 'football':
+                    draw_data = game.get("draw")
+                    if draw_data:
+                        results.append("draw")
+                        prices.append(draw_data.get("price"))
+
+            else:
+                target_keywords = ["line", "handicap"] if market_type == "line" else ["total"]
+                target_market = None
+                for market in game.get("additionalMarkets", []):
+                    market_type_text = str(market.get("type", "")).lower()
+                    market_title_text = str(market.get("title", "")).lower()
+                    if any(k in market_type_text or k in market_title_text for k in target_keywords):
+                        target_market = market
+                        break
+
+                if not target_market:
+                    continue
+
+                for outcome in target_market.get("outcomes", []):
+                    result = outcome.get("title")
+                    if market_type == "line" and result:
+                        mtch = re.search(r'(.+?)\s+([+-]?\d+(?:\.\d+)?)$', result)
+                        if mtch:
+                            result = f"{mtch.group(1).strip()} {float(mtch.group(2)):+.1f}"
+                    results.append(result)
+                    prices.append(outcome.get("price"))
+
             win_market[match, brisbane_date] = {res: price for res, price in zip(results, prices)}
                   
         return win_market

@@ -222,7 +222,7 @@ class UBSportsScraper:
 
         return win_market
     
-    async def UNIBET_scrape_sport(self, comp=None):
+    async def UNIBET_scrape_sport(self, comp=None, market_type="Match", include_line=False, market_match_mode="exact"):
         """
         General sport Unibet Scraper.
         """
@@ -274,15 +274,39 @@ class UBSportsScraper:
                 win_market.setdefault((match_name, brisbane_date), {})
         
                 for bet_offer in comp.get("betOffers", []):
-                    bet_type = bet_offer.get("betOfferType", {}).get("englishName", "")
-                    if bet_type.lower() == "match":  # Match odds only
-                        for outcome in bet_offer.get("outcomes", []):
-                            team = outcome.get("participant") or outcome.get("englishLabel") or ""
-                            odds = outcome.get("oddsDecimal")
+                    bet_type = str(bet_offer.get("betOfferType", {}).get("englishName", ""))
+                    bet_type_l = bet_type.lower()
+
+                    if isinstance(market_type, (list, tuple, set)):
+                        targets = [str(t).lower() for t in market_type]
+                    else:
+                        targets = [str(market_type).lower()]
+
+                    if market_match_mode == "contains":
+                        if not any(t in bet_type_l for t in targets):
+                            continue
+                    else:
+                        if bet_type_l not in targets:
+                            continue
+
+                    if not bet_type:
+                        continue
+
+                    for outcome in bet_offer.get("outcomes", []):
+                        team = outcome.get("participant") or outcome.get("englishLabel") or ""
+                        if include_line:
+                            line = outcome.get("line")
                             try:
-                                win_market[match_name, brisbane_date][team] = float(odds)
+                                if line is not None:
+                                    team = f"{team} {float(line) / 1000:+.1f}"
                             except (TypeError, ValueError):
-                                win_market[match_name, brisbane_date][team] = None
+                                pass
+
+                        odds = outcome.get("oddsDecimal")
+                        try:
+                            win_market[match_name, brisbane_date][team] = float(odds)
+                        except (TypeError, ValueError):
+                            win_market[match_name, brisbane_date][team] = None
         
         
         for group in groups:

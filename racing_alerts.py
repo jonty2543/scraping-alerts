@@ -1,7 +1,7 @@
 import pytz
 from datetime import datetime, timedelta
 from loguru import logger
-import sportsbet_scrapers as sb
+import scrapers.sportsbet_scrapers as sb
 import asyncio
 import nest_asyncio
 nest_asyncio.apply()
