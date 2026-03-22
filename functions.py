@@ -657,28 +657,163 @@ def make_json_safe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def _cleanup_recent_flucs(supabase, time_threshold, batch_size=1000):
-    # Delete in batches to avoid statement timeouts on large tables.
+    # Delete old flucs in batches. Prefer id-based deletes when id exists.
+    try:
+        id_probe = supabase.table("Recent Flucs").select("id").limit(1).execute()
+        has_id = True
+        if id_probe.data and "id" not in id_probe.data[0]:
+            has_id = False
+
+        if has_id:
+            while True:
+                res = (
+                    supabase.table("Recent Flucs")
+                    .select("id")
+                    .lt("Time", time_threshold)
+                    .limit(batch_size)
+                    .execute()
+                )
+                ids = [row.get("id") for row in (res.data or []) if row.get("id") is not None]
+                if not ids:
+                    break
+                supabase.table("Recent Flucs").delete().in_("id", ids).execute()
+            return
+    except Exception as e:
+        msg = str(e)
+        if "column Recent Flucs.id does not exist" not in msg:
+            print(f"⚠️ Failed id-based cleanup of Recent Flucs: {e}")
+
     try:
         while True:
             res = (
                 supabase.table("Recent Flucs")
-                .select("id")
+                .select("Match,Date,Result,Bookie,Time")
                 .lt("Time", time_threshold)
                 .limit(batch_size)
                 .execute()
             )
-            ids = [row.get("id") for row in (res.data or []) if row.get("id") is not None]
-            if res.data and not ids:
-                raise ValueError("Recent Flucs rows missing id column")
-            if not ids:
+            rows = res.data or []
+            if not rows:
                 break
-            supabase.table("Recent Flucs").delete().in_("id", ids).execute()
-    except Exception as e:
-        print(f"⚠️ Failed batch cleanup of Recent Flucs: {e}")
+
+            for row in rows:
+                (
+                    supabase.table("Recent Flucs")
+                    .delete()
+                    .eq("Match", row.get("Match"))
+                    .eq("Date", row.get("Date"))
+                    .eq("Result", row.get("Result"))
+                    .eq("Bookie", row.get("Bookie"))
+                    .eq("Time", row.get("Time"))
+                    .execute()
+                )
+
+            if len(rows) < batch_size:
+                break
+    except Exception as e2:
         try:
             supabase.table("Recent Flucs").delete().lt("Time", time_threshold).execute()
-        except Exception as e2:
+        except Exception as e3:
             print(f"⚠️ Failed fallback cleanup of Recent Flucs: {e2}")
+            print(f"⚠️ Full-table cleanup also failed: {e3}")
+
+
+def _derive_closing_table_name(table_name: str) -> str:
+    if table_name.endswith(" Odds"):
+        return f"{table_name[:-5]} Closing Odds"
+    return f"{table_name} Closing"
+
+
+def _store_closing_odds(
+    supabase,
+    current_df: pd.DataFrame,
+    latest_df: pd.DataFrame,
+    key_cols: list,
+    price_cols: list,
+    source_table_name: str,
+    closing_table_name: Optional[str] = None,
+):
+    if current_df.empty:
+        return
+
+    if latest_df.empty:
+        logger.warning(
+            f"Skipping closing capture for {source_table_name}: latest snapshot is empty, "
+            "which is too ambiguous to treat as a true market close."
+        )
+        return
+
+    if not all(col in current_df.columns for col in key_cols):
+        logger.warning(f"Skipping closing capture for {source_table_name}: current snapshot missing key columns.")
+        return
+
+    if not all(col in latest_df.columns for col in key_cols):
+        logger.warning(f"Skipping closing capture for {source_table_name}: latest snapshot missing key columns.")
+        return
+
+    current_keys = current_df[key_cols].drop_duplicates()
+    latest_keys = latest_df[key_cols].drop_duplicates()
+    missing_keys = (
+        current_keys
+        .merge(latest_keys, on=key_cols, how="left", indicator=True)
+        .loc[lambda df: df["_merge"] == "left_only", key_cols]
+    )
+    if missing_keys.empty:
+        return
+
+    base_cols = [col for col in latest_df.columns if col in current_df.columns]
+    if not base_cols:
+        logger.warning(f"Skipping closing capture for {source_table_name}: no shared columns between snapshots.")
+        return
+
+    closing_rows = current_df[base_cols].merge(missing_keys, on=key_cols, how="inner")
+    valid_price_cols = [col for col in price_cols if col in closing_rows.columns]
+    if valid_price_cols:
+        closing_rows = closing_rows.loc[
+            closing_rows[valid_price_cols].apply(
+                lambda row: any(pd.notna(v) and float(v) > 0 for v in row),
+                axis=1
+            )
+        ]
+    if closing_rows.empty:
+        return
+
+    now_str = datetime.now(pytz.timezone("Australia/Brisbane")).strftime("%Y-%m-%d %H:%M:%S")
+    closing_rows = closing_rows.copy()
+    closing_rows["Closed Time"] = now_str
+    closing_rows["Source Table"] = source_table_name
+    closing_rows = make_json_safe(closing_rows)
+    records = closing_rows.to_dict(orient="records")
+    closing_table = closing_table_name or _derive_closing_table_name(source_table_name)
+
+    try:
+        for rec in records:
+            delete_query = supabase.table(closing_table).delete()
+            for key in key_cols:
+                delete_query = delete_query.eq(key, rec.get(key))
+            delete_query.execute()
+    except Exception as e:
+        logger.warning(f"Skipping closing capture for {source_table_name}: failed to prepare {closing_table}: {e}")
+        return
+
+    try:
+        supabase.table(closing_table).insert(records).execute()
+        logger.info(f"Inserted {len(records)} closing rows into {closing_table}.")
+    except Exception as e:
+        msg = str(e)
+        optional_cols = {"Closed Time", "Source Table"}
+        if any(f"Could not find the '{col}' column" in msg for col in optional_cols):
+            fallback_records = [{k: v for k, v in rec.items() if k not in optional_cols} for rec in records]
+            try:
+                supabase.table(closing_table).insert(fallback_records).execute()
+                logger.info(
+                    f"Inserted {len(fallback_records)} closing rows into {closing_table} "
+                    "without optional metadata columns."
+                )
+            except Exception as retry_e:
+                logger.warning(f"Failed to insert closing rows into {closing_table}: {retry_e}")
+        else:
+            logger.warning(f"Failed to insert closing rows into {closing_table}: {e}")
 
 
 def process_odds(
@@ -692,7 +827,9 @@ def process_odds(
     include_value=False,
     min_mkt_percent=80,
     upsert=False,
-    upsert_keys=None
+    upsert_keys=None,
+    store_closing_odds=False,
+    closing_table_name=None,
 ):
     """
     Process odds from multiple bookmakers, merge, calculate market %, 
@@ -834,7 +971,7 @@ def process_odds(
             current_df[col] = None
             
     dedupe_keys = ["Match", "Date", "Result"]
-    if upsert and upsert_keys:
+    if upsert_keys:
         dedupe_keys = [k for k in upsert_keys if k in df_mapped.columns]
     elif include_value and "Value" in df_mapped.columns:
         dedupe_keys.append("Value")
@@ -864,9 +1001,20 @@ def process_odds(
     df_mapped = make_json_safe(df_mapped)
     records = df_mapped.to_dict(orient="records")
 
+    if store_closing_odds:
+        _store_closing_odds(
+            supabase=supabase,
+            current_df=current_df,
+            latest_df=df_mapped,
+            key_cols=dedupe_keys,
+            price_cols=active_price_cols,
+            source_table_name=table_name,
+            closing_table_name=closing_table_name,
+        )
+
     # --- Price Fluctuation Analysis ---
     fluc_keys = ['Match', 'Date', 'Result']
-    if upsert and upsert_keys:
+    if upsert_keys:
         fluc_keys = [k for k in upsert_keys if k in df_mapped.columns and k in current_df.columns]
     elif include_value and "Value" in df_mapped.columns:
         fluc_keys.append("Value")
@@ -923,7 +1071,16 @@ def process_odds(
             supabase.table("Recent Flucs").insert(records_flucs).execute()
             print(f"✅ Inserted {len(records_flucs)} records into Recent Flucs.")
         except Exception as e:
-            print("❌ Failed to insert records into Supabase:", e)
+            msg = str(e)
+            if "Could not find the 'Value' column of 'Recent Flucs'" in msg:
+                try:
+                    records_flucs_no_value = [{k: v for k, v in rec.items() if k != "Value"} for rec in records_flucs]
+                    supabase.table("Recent Flucs").insert(records_flucs_no_value).execute()
+                    print(f"✅ Inserted {len(records_flucs_no_value)} records into Recent Flucs (without Value column).")
+                except Exception as retry_e:
+                    print("❌ Failed to insert records into Supabase:", retry_e)
+            else:
+                print("❌ Failed to insert records into Supabase:", e)
     else:
         print("⚠️ No flucs records to insert. Skipping.")
 
@@ -990,7 +1147,32 @@ def process_odds(
 
         logger.info(f"Inserting fresh {table_name} records...")
         if records:
-            supabase.table(table_name).insert(records).execute()
+            try:
+                supabase.table(table_name).insert(records).execute()
+            except Exception as e:
+                msg = str(e)
+                if include_value and "duplicate key value violates unique constraint" in msg:
+                    logger.warning(
+                        f"{table_name} unique key does not currently allow multiple values per team. "
+                        "Falling back to one row per Match/Date/Result."
+                    )
+                    fallback_df = df_mapped.copy()
+                    if "Market %" in fallback_df.columns:
+                        fallback_df = fallback_df.sort_values(
+                            ["Match", "Date", "Result", "Market %"],
+                            ascending=[True, True, True, False]
+                        )
+                    fallback_df = fallback_df.drop_duplicates(
+                        subset=["Match", "Date", "Result"],
+                        keep="first"
+                    ).reset_index(drop=True)
+                    fallback_records = fallback_df.to_dict(orient="records")
+                    if fallback_records:
+                        supabase.table(table_name).insert(fallback_records).execute()
+                    else:
+                        print("⚠️ No fallback records to insert.")
+                else:
+                    raise
         else:
             print("⚠️ No records to insert. Skipping Supabase insert.")
     

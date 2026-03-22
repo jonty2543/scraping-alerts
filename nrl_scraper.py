@@ -55,10 +55,11 @@ def _extract_side(result, market_kind):
         return "under"
     return None
 
-def _select_three_center_values(bookmakers_markets, market_kind, num_values=3):
+def _select_three_center_values(bookmakers_markets, market_kind, num_values=3, line_window_points=None):
     # key -> value -> bookmaker -> sides
     value_bookies = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
     value_sides = defaultdict(lambda: defaultdict(set))
+    required_sides = {"plus", "minus"} if market_kind == "line" else {"over", "under"}
 
     for bookie, markets in bookmakers_markets.items():
         for key, odds in markets.items():
@@ -76,7 +77,6 @@ def _select_three_center_values(bookmakers_markets, market_kind, num_values=3):
         if not value_map:
             continue
 
-        required_sides = {"plus", "minus"} if market_kind == "line" else {"over", "under"}
         candidates = [v for v in value_map.keys() if required_sides.issubset(value_sides[key].get(v, set()))]
         if not candidates:
             candidates = list(value_map.keys())
@@ -107,16 +107,22 @@ def _select_three_center_values(bookmakers_markets, market_kind, num_values=3):
             ),
         )[0]
 
-        ordered = sorted(
-            candidates,
-            key=lambda v: (
-                abs(v - center),
-                -full_pair_coverage(v),
-                -any_coverage(v),
-                v,
-            ),
-        )
-        picked = ordered[:max(1, int(num_values))]
+        if market_kind == "line" and line_window_points is not None:
+            picked = [v for v in sorted(candidates) if abs(v - center) <= float(line_window_points) + 1e-9]
+            if not picked:
+                picked = [center]
+        else:
+            ordered = sorted(
+                candidates,
+                key=lambda v: (
+                    abs(v - center),
+                    -full_pair_coverage(v),
+                    -any_coverage(v),
+                    v,
+                ),
+            )
+            picked = ordered[:max(1, int(num_values))]
+
         selected_values[key] = set(round(float(v), 1) for v in picked)
 
     filtered = {}
@@ -126,18 +132,28 @@ def _select_three_center_values(bookmakers_markets, market_kind, num_values=3):
             allowed = selected_values.get(key)
             if not allowed:
                 continue
-            kept = {}
-            kept_sides = set()
+
+            per_value = defaultdict(dict)
             for result, price in odds.items():
                 value = _extract_market_value(result, market_kind)
                 side = _extract_side(result, market_kind)
                 if value is None or side is None:
                     continue
-                if round(float(value), 1) in allowed:
+                value = round(float(value), 1)
+                if value in allowed:
+                    per_value[value][side] = (result, price)
+
+            kept = {}
+            for value, side_rows in per_value.items():
+                if not required_sides.issubset(set(side_rows.keys())):
+                    continue
+                for side in required_sides:
+                    result, price = side_rows[side]
                     kept[result] = price
-                    kept_sides.add(side)
-            if len(kept) >= 2 and required_sides.issubset(kept_sides):
+
+            if len(kept) >= 2:
                 new_markets[key] = kept
+
         filtered[bookie] = new_markets
 
     return filtered, selected_values
@@ -196,6 +212,8 @@ async def main():
         match_threshold=80,
         upsert=UPSERT_NRL,
         upsert_keys=["Match", "Date", "Result"],
+        store_closing_odds=True,
+        closing_table_name="NRL Closing Odds",
     )
 
     # -------- NRL Line --------
@@ -245,7 +263,7 @@ async def main():
     bookmakers_line, selected_line_values = _select_three_center_values(
         bookmakers_line,
         market_kind="line",
-        num_values=1,
+        line_window_points=2.0,
     )
     line_counts_filtered = {k: len(v) for k, v in bookmakers_line.items()}
     logger.info(f"NRL line market counts after value filter: {line_counts_filtered}")
@@ -263,7 +281,9 @@ async def main():
         include_value=True,
         min_mkt_percent=40,
         upsert=UPSERT_NRL,
-        upsert_keys=["Match", "Date", "Result"],
+        upsert_keys=["Match", "Date", "Result", "Value"],
+        store_closing_odds=True,
+        closing_table_name="NRL Closing Odds",
     )
 
     # -------- NRL Total --------
@@ -335,7 +355,9 @@ async def main():
         include_value=True,
         min_mkt_percent=40,
         upsert=UPSERT_NRL,
-        upsert_keys=["Match", "Date", "Result"],
+        upsert_keys=["Match", "Date", "Result", "Value"],
+        store_closing_odds=True,
+        closing_table_name="NRL Closing Odds",
     )
 
 

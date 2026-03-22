@@ -2,6 +2,7 @@ import time
 import asyncio
 import traceback
 import re
+import requests
 
 from loguru                       import logger
 from random                       import randrange
@@ -23,6 +24,29 @@ class PalmerBetSportsScraper:
         self.chosen_date = chosen_date
         # self.jurisdiction = self.map_jurisdiction(jurisdiction)
 
+    def _requests_json(self, url, retries=3, delay=1.0):
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json",
+        }
+        last_err = None
+        for attempt in range(retries):
+            try:
+                resp = requests.get(url, headers=headers, timeout=20)
+                if resp.status_code == 200:
+                    return resp.json()
+                last_err = f"HTTP {resp.status_code}"
+            except Exception as e:
+                last_err = e
+            if attempt < retries - 1:
+                time.sleep(delay * (attempt + 1))
+        logger.warning(f"PalmerBet requests JSON failed for {url}: {last_err}")
+        return None
+
 
     async def PalmerBet_scrape(self, comp=None, sport=None, market_type='h2h'):
         """
@@ -32,17 +56,21 @@ class PalmerBetSportsScraper:
         
         win_market = {}
 
-        async with async_playwright() as p:
-            # Stealth Browser Set Up to Access Sportsbet API (Not Needed but just copied over from TAB)
-            browser = await p.chromium.launch(headless=True)
-            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
-            page = await browser.new_page(user_agent=ua)
-
-            await page.goto(self.url)
-
-            all_markets = await page.evaluate(f"() => fetch('{self.url}').then(response => response.json())")
-            if not all_markets:
-                logger.error("Failed to fetch markets")
+        all_markets = self._requests_json(self.url, retries=3, delay=1.2)
+        if not all_markets:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
+                page = await browser.new_page(user_agent=ua)
+                try:
+                    await page.goto(self.url, wait_until="domcontentloaded")
+                    all_markets = await page.evaluate(
+                        f"""() => fetch('{self.url}')
+                        .then(r => r.text())
+                        .then(t => {{ try {{ return JSON.parse(t); }} catch (e) {{ return null; }} }})"""
+                    )
+                except Exception:
+                    all_markets = None
                 await browser.close()
                 
         if not all_markets:

@@ -3,6 +3,7 @@ import asyncio
 import traceback
 import json
 import re
+import requests
 
 from loguru                       import logger
 from random                       import randrange
@@ -170,71 +171,97 @@ class SBSportsScraper:
         self.url = url
         self.chosen_date = chosen_date
         # self.jurisdiction = self.map_jurisdiction(jurisdiction)
+
+    def _requests_json(self, url, retries=3, delay=1.0):
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json",
+        }
+        last_err = None
+        for attempt in range(retries):
+            try:
+                resp = requests.get(url, headers=headers, timeout=20)
+                if resp.status_code == 200:
+                    return resp.json()
+                last_err = f"HTTP {resp.status_code}"
+            except Exception as e:
+                last_err = e
+            if attempt < retries - 1:
+                time.sleep(delay * (attempt + 1))
+        logger.warning(f"Sportsbet requests JSON failed for {url}: {last_err}")
+        return None
     
     async def SPORTSBET_scraper(self, market_type=None, competition_id='none', retries=3, delay=2):
         """
         Union Sportsbet Scraper.
         """
-        # Input checking
-
-        async with async_playwright() as p:
-            # Stealth Browser Set Up to Access Sportsbet API (Not Needed but just copied over from TAB)
-            browser = await p.chromium.launch(headless=True)
-            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
-            page = await browser.new_page(user_agent=ua)
-
-            await page.goto(self.url)
-
-            all_markets = await page.evaluate(f"() => fetch('{self.url}').then(response => response.json())")
-            if not all_markets:
-                logger.error("Failed to fetch markets")
+        all_markets = self._requests_json(self.url, retries=retries, delay=delay)
+        if not all_markets:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
+                page = await browser.new_page(user_agent=ua)
+                try:
+                    await page.goto(self.url, wait_until="domcontentloaded")
+                    all_markets = await page.evaluate(
+                        f"""() => fetch('{self.url}')
+                        .then(r => r.text())
+                        .then(t => {{ try {{ return JSON.parse(t); }} catch (e) {{ return null; }} }})"""
+                    )
+                except Exception:
+                    all_markets = None
                 await browser.close()
-                                        
-            win_market = {}
-                
-            for market in all_markets:
-                
-                if market.get("hasBIRStarted") == 'true':
-                    continue
-                
-                if competition_id != 'none':
-                    if market.get("competitionId") != competition_id:
-                        continue
-                    
-                if market_type != None:
-                    if market['primaryMarket']['name'] != market_type:
-                        continue
-                    
-                if market.get("eventSort") != 'MTCH':
-                    continue
-                
-                utc_ts = market.get("startTime")  # e.g., 1761371400 (Unix timestamp)
-                brisbane = pytz.timezone("Australia/Brisbane")
-                
-                # Convert Unix timestamp (UTC) → Brisbane datetime
-                utc_dt = datetime.utcfromtimestamp(utc_ts).replace(tzinfo=pytz.utc)
-                brisbane_dt = utc_dt.astimezone(brisbane)
-                brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
 
-                                    
-                primaryMarket = market['primaryMarket']
-                
-                selections = primaryMarket['selections']
-                market_name = market['displayName']
-                
-                prices = []
-                results = []
-                
-                for selection in selections:
-                    result = selection['name']
-                    price = selection['price']['winPrice']
-                    results.append(result)
-                    prices.append(price)
-                
+        if not all_markets:
+            logger.error("Failed to fetch Sportsbet markets")
+            return {}
+
+        win_market = {}
+
+        for market in all_markets:
+            if market.get("hasBIRStarted") == 'true':
+                continue
+
+            if competition_id != 'none' and market.get("competitionId") != competition_id:
+                continue
+
+            if market_type is not None and market.get('primaryMarket', {}).get('name') != market_type:
+                continue
+
+            if market.get("eventSort") != 'MTCH':
+                continue
+
+            utc_ts = market.get("startTime")
+            brisbane = pytz.timezone("Australia/Brisbane")
+            utc_dt = datetime.utcfromtimestamp(utc_ts).replace(tzinfo=pytz.utc)
+            brisbane_dt = utc_dt.astimezone(brisbane)
+            brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
+
+            primaryMarket = market.get('primaryMarket') or {}
+            selections = primaryMarket.get('selections') or []
+            market_name = market.get('displayName') or market.get('name')
+            if not market_name:
+                continue
+
+            prices = []
+            results = []
+            for selection in selections:
+                result = selection.get('name')
+                price = (selection.get('price') or {}).get('winPrice')
+                if result is None or price is None:
+                    continue
+                results.append(result)
+                prices.append(price)
+
+            if results and prices:
                 win_market[market_name, brisbane_date] = {
                     result: price for result, price in zip(results, prices)
                 }
-                
+
         return win_market
 
     async def SPORTSBET_scraper_lines_totals(self, market_kind='line', competition_id='none'):
@@ -260,6 +287,9 @@ class SBSportsScraper:
                 last_err = None
                 for attempt in range(retries):
                     try:
+                        direct = self._requests_json(url, retries=1, delay=0.0)
+                        if direct is not None:
+                            return direct
                         return await page.evaluate(f"() => fetch('{url}').then(r => r.json())")
                     except Exception as e:
                         last_err = e
@@ -270,8 +300,7 @@ class SBSportsScraper:
 
             ok = await goto_with_retry(self.url)
             if not ok:
-                await browser.close()
-                return {}
+                logger.warning("Sportsbet page navigation failed; continuing with direct HTTP requests.")
 
             all_events = await fetch_json(self.url, default=[])
             if not all_events:
