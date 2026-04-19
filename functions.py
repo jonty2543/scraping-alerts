@@ -1189,6 +1189,243 @@ def process_odds(
 
     return df_mapped, mkt_percents
 
+def process_line_total_wide(
+    bookmakers: dict,
+    price_cols: list,
+    table_name: str,
+    market_kind: str,
+    match_threshold: int = 80,
+    upsert: bool = False,
+    upsert_keys=None,
+    store_closing_odds: bool = False,
+    closing_table_name: Optional[str] = None,
+):
+    """
+    Process line/total odds into wide format keyed by (Match, Date, Result).
+    Each bookie gets {bookie}_odds and {bookie}_line columns.
+    Result is the team name (line) or Over/Under (total), not including the value.
+    """
+    from rapidfuzz import fuzz, process as fuzz_process
+
+    is_line = market_kind.lower() == "line"
+    required_sides = {"plus", "minus"} if is_line else {"over", "under"}
+
+    def _strip_value(text):
+        return re.sub(r'\s*[-+]?\d+(?:\.\d+)?\s*$', '', str(text).strip()).strip() or str(text).strip()
+
+    def _get_side(text):
+        s = str(text).lower()
+        if is_line:
+            m = re.search(r'[-+]?\d+(?:\.\d+)?', s)
+            if m:
+                v = float(m.group(0))
+                if v > 0:
+                    return "plus"
+                if v < 0:
+                    return "minus"
+            return None
+        if "over" in s:
+            return "over"
+        if "under" in s:
+            return "under"
+        return None
+
+    def _get_value(text):
+        m = re.search(r'([-+]?\d+(?:\.\d+)?)', str(text))
+        return float(m.group(1)) if m else None
+
+    # Build per-bookie DataFrames
+    bookie_dfs = {}
+    for name, markets in bookmakers.items():
+        rows = []
+        skipped = 0
+        for (match, date), odds in markets.items():
+            best = {}  # (result_stripped, side) -> (odds_val, line_val)
+            for result, price in odds.items():
+                side = _get_side(result)
+                value = _get_value(result)
+                stripped = _strip_value(result)
+                if side is None or value is None:
+                    logger.debug(f"{name} | {match} | skipping result={result!r} side={side} value={value}")
+                    continue
+                key = (stripped, side)
+                if key not in best or price > best[key][0]:
+                    best[key] = (price, value)
+
+            sides_seen = {k[1] for k in best}
+            if not required_sides.issubset(sides_seen):
+                skipped += 1
+                logger.debug(f"{name} | {match} | missing sides: have={sides_seen} need={required_sides} keys={list(best.keys())}")
+                continue
+
+            for (stripped, side), (price, value) in best.items():
+                rows.append({
+                    "match": match,
+                    "date": date,
+                    "result": stripped,
+                    "side": side,
+                    f"{name}_odds": price,
+                    f"{name}_line": value,
+                })
+
+        if rows:
+            df = pd.DataFrame(rows)
+            df["date"] = pd.to_datetime(df["date"])
+            df["match_norm"] = df["match"].apply(normalize_match)
+            df["result_norm"] = df["result"].apply(normalize_result)
+            bookie_dfs[name] = df
+            logger.info(f"{name}: {len(rows)} rows parsed, {skipped} games skipped (missing sides)")
+        else:
+            logger.warning(f"Skipping {name} — no valid {market_kind} markets. {skipped} games had missing sides.")
+
+    valid_bookies = [n for n in price_cols if n in bookie_dfs]
+    if not valid_bookies:
+        logger.error(f"No valid bookmakers for {table_name}. Exiting.")
+        return
+
+    base_name = max(valid_bookies, key=lambda n: bookie_dfs[n]["match"].nunique())
+    base_df = bookie_dfs[base_name].copy()
+    base_df["match_key"] = base_df["match_norm"]
+    base_df["result_key"] = base_df["result_norm"]
+
+    odds_cols = [f"{base_name}_odds", f"{base_name}_line"]
+
+    for name in valid_bookies:
+        if name == base_name:
+            continue
+        other = bookie_dfs[name].copy()
+        other["match_key"] = None
+        other["result_key"] = None
+
+        other_matches = other[["match_norm", "date"]].drop_duplicates()
+        match_map = {}
+        for _, br in base_df[["match_key", "date"]].drop_duplicates().iterrows():
+            same_date = other_matches[other_matches["date"] == br["date"]]
+            if same_date.empty:
+                continue
+            best = fuzz_process.extractOne(
+                br["match_key"], same_date["match_norm"].tolist(), scorer=fuzz.token_sort_ratio
+            )
+            if best and best[1] >= match_threshold:
+                match_map[(br["match_key"], br["date"])] = best[0]
+
+        for (base_match, base_date), other_match in match_map.items():
+            mask = (other["match_norm"] == other_match) & (other["date"] == base_date)
+            other.loc[mask, "match_key"] = base_match
+
+            if is_line:
+                base_results = base_df[
+                    (base_df["match_key"] == base_match) & (base_df["date"] == base_date)
+                ][["result_key", "side"]].drop_duplicates()
+                other_in_game = other[mask]
+
+                for _, brow in base_results.iterrows():
+                    same_side = other_in_game[other_in_game["side"] == brow["side"]]["result_norm"].tolist()
+                    if not same_side:
+                        continue
+                    best_r = fuzz_process.extractOne(brow["result_key"], same_side, scorer=fuzz.token_sort_ratio)
+                    if best_r and best_r[1] >= 70:
+                        omask = mask & (other["result_norm"] == best_r[0]) & (other["side"] == brow["side"])
+                        other.loc[omask, "result_key"] = brow["result_key"]
+            else:
+                other.loc[mask, "result_key"] = other.loc[mask, "side"]
+
+        merge_on = ["match_key", "date", "result_key"]
+        merge_cols = merge_on + [f"{name}_odds", f"{name}_line"]
+        other_merge = (
+            other[other["match_key"].notna() & other["result_key"].notna()][merge_cols]
+            .drop_duplicates(subset=merge_on)
+        )
+        base_df = base_df.merge(other_merge, on=merge_on, how="left")
+        odds_cols += [f"{name}_odds", f"{name}_line"]
+
+    # Build output DataFrame
+    keep = ["match", "date", "result"] + [c for c in odds_cols if c in base_df.columns]
+    df_out = base_df[keep].copy().rename(columns={"match": "Match", "date": "Date", "result": "Result"})
+    df_out["Market"] = market_kind.capitalize()
+    df_out["Date"] = pd.to_datetime(df_out["Date"]).dt.strftime("%Y-%m-%d")
+
+    odds_only = [c for c in df_out.columns if c.endswith("_odds")]
+    df_out = df_out[
+        df_out[odds_only].apply(lambda r: any(pd.notna(v) and float(v) > 0 for v in r), axis=1)
+    ]
+    df_out = df_out.drop_duplicates(subset=["Match", "Date", "Result"]).reset_index(drop=True)
+    logger.info(f"{table_name}: {len(df_out)} rows after merge")
+
+    dedupe_keys = [k for k in (upsert_keys or ["Match", "Date", "Result"]) if k in df_out.columns]
+
+    current_table = supabase.table(table_name).select("*").execute()
+    current_df = pd.DataFrame(current_table.data)
+
+    if store_closing_odds:
+        _store_closing_odds(
+            supabase=supabase,
+            current_df=current_df,
+            latest_df=df_out,
+            key_cols=dedupe_keys,
+            price_cols=odds_only,
+            source_table_name=table_name,
+            closing_table_name=closing_table_name,
+        )
+
+    # Fluctuation tracking on _odds columns
+    shared_odds = [c for c in odds_only if c in (current_df.columns if not current_df.empty else [])]
+    if shared_odds and not current_df.empty:
+        flucs = pd.merge(
+            df_out[dedupe_keys + shared_odds],
+            current_df[dedupe_keys + shared_odds],
+            on=dedupe_keys,
+            suffixes=('_new', '_old'),
+            how='outer',
+        )
+        new_prices = flucs.melt(id_vars=dedupe_keys, value_vars=[f"{c}_new" for c in shared_odds], var_name='Bookie', value_name='New Price')
+        new_prices['Bookie'] = new_prices['Bookie'].str.replace('_odds_new', '')
+        old_prices = flucs.melt(id_vars=dedupe_keys, value_vars=[f"{c}_old" for c in shared_odds], var_name='Bookie', value_name='Old Price')
+        old_prices['Bookie'] = old_prices['Bookie'].str.replace('_odds_old', '')
+        flucs_long = pd.merge(new_prices, old_prices, on=dedupe_keys + ['Bookie'])
+        flucs_long['Time'] = datetime.now(pytz.timezone("Australia/Brisbane")).strftime('%Y-%m-%d %H:%M:%S')
+        flucs_long['Prob Change'] = None
+        mask = (flucs_long['New Price'] > 0) & (flucs_long['Old Price'] > 0)
+        flucs_long.loc[mask, 'Prob Change'] = (
+            1 / flucs_long.loc[mask, 'New Price'] - 1 / flucs_long.loc[mask, 'Old Price']
+        )
+        flucs_long = flucs_long.replace([np.nan, np.inf, -np.inf], None)
+        flucs_long['Sport'] = table_name.replace(" Odds", "")
+        flucs_long = make_json_safe(flucs_long)
+        records_flucs = flucs_long.to_dict(orient="records")
+        if records_flucs:
+            try:
+                supabase.table("Recent Flucs").insert(records_flucs).execute()
+                logger.info(f"Inserted {len(records_flucs)} fluc records.")
+            except Exception as e:
+                logger.warning(f"Failed to insert flucs: {e}")
+
+        time_threshold = (datetime.now(pytz.timezone("Australia/Brisbane")) - timedelta(hours=3)).isoformat()
+        _cleanup_recent_flucs(supabase, time_threshold)
+
+    df_out = make_json_safe(df_out)
+    df_out = df_out.replace([np.nan, np.inf, -np.inf], None)
+    records = [{k: (None if isinstance(v, float) and (v != v) else v) for k, v in r.items()} for r in df_out.to_dict(orient="records")]
+
+    if upsert:
+        if records:
+            try:
+                supabase.table(table_name).upsert(records, on_conflict=",".join(dedupe_keys)).execute()
+                logger.info(f"✅ Upserted {len(records)} records into {table_name}.")
+            except Exception as e:
+                logger.error(f"❌ Failed upsert into {table_name}: {e}")
+    else:
+        supabase.table(table_name).delete().neq("Match", "").execute()
+        if records:
+            try:
+                supabase.table(table_name).insert(records).execute()
+                logger.info(f"✅ Inserted {len(records)} records into {table_name}.")
+            except Exception as e:
+                logger.error(f"❌ Failed insert into {table_name}: {e}")
+
+    return df_out
+
+
 def get_pb_url(competition_id: int):
     return f'https://api.au.pointsbet.com/api/mes/v3/events/featured/competition/{competition_id}?page=1'
 

@@ -260,28 +260,16 @@ async def main():
     line_counts = {k: len(v) for k, v in bookmakers_line.items()}
     logger.info(f"NRL line market counts: {line_counts}")
 
-    bookmakers_line, selected_line_values = _select_three_center_values(
-        bookmakers_line,
-        market_kind="line",
-        line_window_points=2.0,
-    )
-    line_counts_filtered = {k: len(v) for k, v in bookmakers_line.items()}
-    logger.info(f"NRL line market counts after value filter: {line_counts_filtered}")
-    logger.info(f"NRL selected line values (sample): {list(selected_line_values.items())[:3]}")
-
     price_cols_line = ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright"]
 
-    f.process_odds(
+    f.process_line_total_wide(
         bookmakers_line,
         price_cols_line,
         table_name="NRL Line Odds",
+        market_kind="line",
         match_threshold=80,
-        outcomes=2,
-        market="Line",
-        include_value=True,
-        min_mkt_percent=40,
         upsert=UPSERT_NRL,
-        upsert_keys=["Match", "Date", "Result", "Value"],
+        upsert_keys=["Match", "Date", "Result"],
         store_closing_odds=True,
         closing_table_name="NRL Closing Odds",
     )
@@ -334,28 +322,16 @@ async def main():
     total_counts = {k: len(v) for k, v in bookmakers_total.items()}
     logger.info(f"NRL total market counts: {total_counts}")
 
-    bookmakers_total, selected_total_values = _select_three_center_values(
-        bookmakers_total,
-        market_kind="total",
-        num_values=1,
-    )
-    total_counts_filtered = {k: len(v) for k, v in bookmakers_total.items()}
-    logger.info(f"NRL total market counts after value filter: {total_counts_filtered}")
-    logger.info(f"NRL selected total values (sample): {list(selected_total_values.items())[:3]}")
-
     price_cols_total = ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright"]
 
-    f.process_odds(
+    f.process_line_total_wide(
         bookmakers_total,
         price_cols_total,
         table_name="NRL Total Odds",
+        market_kind="total",
         match_threshold=80,
-        outcomes=2,
-        market="Total",
-        include_value=True,
-        min_mkt_percent=40,
         upsert=UPSERT_NRL,
-        upsert_keys=["Match", "Date", "Result", "Value"],
+        upsert_keys=["Match", "Date", "Result"],
         store_closing_odds=True,
         closing_table_name="NRL Closing Odds",
     )
