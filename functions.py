@@ -29,6 +29,7 @@ import time
 import boto3
 from io import StringIO
 
+from collections import defaultdict
 import math
 import json
 from typing import Dict, Iterable, List, Optional
@@ -1234,13 +1235,22 @@ def process_line_total_wide(
         m = re.search(r'([-+]?\d+(?:\.\d+)?)', str(text))
         return float(m.group(1)) if m else None
 
+    def _pair_balance_score(side_prices):
+        prices = []
+        for side in required_sides:
+            price = side_prices.get(side)
+            if price is None or price <= 0:
+                return (float("inf"), float("inf"))
+            prices.append(float(price))
+        return (abs(math.log(max(prices) / min(prices))), abs(sum(1 / p for p in prices) - 1.05))
+
     # Build per-bookie DataFrames
     bookie_dfs = {}
     for name, markets in bookmakers.items():
         rows = []
         skipped = 0
         for (match, date), odds in markets.items():
-            best = {}  # (result_stripped, side) -> (odds_val, line_val)
+            by_value = defaultdict(list)
             for result, price in odds.items():
                 side = _get_side(result)
                 value = _get_value(result)
@@ -1248,9 +1258,46 @@ def process_line_total_wide(
                 if side is None or value is None:
                     logger.debug(f"{name} | {match} | skipping result={result!r} side={side} value={value}")
                     continue
-                key = (stripped, side)
-                if key not in best or price > best[key][0]:
-                    best[key] = (price, value)
+                try:
+                    price_val = float(price)
+                except (TypeError, ValueError):
+                    logger.debug(f"{name} | {match} | skipping result={result!r} invalid price={price!r}")
+                    continue
+                by_value[round(abs(float(value)), 1)].append({
+                    "stripped": stripped,
+                    "side": side,
+                    "price": price_val,
+                    "value": value,
+                })
+
+            complete_values = []
+            for value_key, items in by_value.items():
+                side_prices = {}
+                for item in items:
+                    if item["side"] not in side_prices or item["price"] > side_prices[item["side"]]:
+                        side_prices[item["side"]] = item["price"]
+                if required_sides.issubset(side_prices):
+                    complete_values.append((value_key, side_prices))
+
+            if not complete_values:
+                skipped += 1
+                sides_seen = {item["side"] for items in by_value.values() for item in items}
+                logger.debug(f"{name} | {match} | missing sides: have={sides_seen} need={required_sides}")
+                continue
+
+            selected_value, _ = min(
+                complete_values,
+                key=lambda pair: (
+                    _pair_balance_score(pair[1]),
+                    pair[0],
+                ),
+            )
+
+            best = {}  # (result_stripped, side) -> (odds_val, line_val)
+            for item in by_value[selected_value]:
+                key = (item["stripped"], item["side"])
+                if key not in best or item["price"] > best[key][0]:
+                    best[key] = (item["price"], item["value"])
 
             sides_seen = {k[1] for k in best}
             if not required_sides.issubset(sides_seen):

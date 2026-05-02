@@ -205,7 +205,7 @@ class BRSportsScraper:
                                                 continue
                                             header = str(outcome.get("groupByHeader", "")).lower()
                                             code = str(outcome.get("marketTypeCode", "")).upper()
-                                            if header not in {"handicap", "pick your own line"} and code not in {"HCWEST", "HCAU", "HCPYOL"}:
+                                            if header != "handicap" and code not in {"HCWEST", "HCAU"}:
                                                 continue
                                             outcome_name = outcome.get("outcomeName")
                                             price = outcome.get("price")
@@ -220,7 +220,7 @@ class BRSportsScraper:
                                     for event in events:
                                         event_name = str(event.get("eventName", ""))
                                         event_name_l = event_name.lower()
-                                        if "total match points over/under" not in event_name_l:
+                                        if event_name_l != "total match points" and not event_name_l.startswith("total match points over/under"):
                                             continue
                                         if "first half" in event_name_l or "second half" in event_name_l:
                                             continue
