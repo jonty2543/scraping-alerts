@@ -596,6 +596,141 @@ class SBSportsScraper:
 
             await browser.close()
             return win_market
+
+    async def SPORTSBET_scraper_tryscorers(self, competition_id='none'):
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
+            page = await browser.new_page(user_agent=ua)
+
+            async def fetch_json(url, default=None, retries=3, delay=1.0):
+                last_err = None
+                for attempt in range(retries):
+                    try:
+                        direct = self._requests_json(url, retries=1, delay=0.0)
+                        if direct is not None:
+                            return direct
+                        return await page.evaluate(f"() => fetch('{url}').then(r => r.json())")
+                    except Exception as e:
+                        last_err = e
+                        if attempt < retries - 1:
+                            await asyncio.sleep(delay * (attempt + 1))
+                logger.warning(f"Sportsbet fetch failed for {url}: {last_err}")
+                return default
+
+            try:
+                await page.goto(self.url, wait_until="domcontentloaded")
+            except Exception:
+                logger.warning("Sportsbet page navigation failed; continuing with direct HTTP requests.")
+
+            all_events = await fetch_json(self.url, default=[])
+            if not all_events:
+                logger.error("Failed to fetch Sportsbet markets")
+                await browser.close()
+                return {}
+
+            def iter_markets(node):
+                if isinstance(node, dict):
+                    if isinstance(node.get("selections"), list):
+                        yield node
+                    for val in node.values():
+                        yield from iter_markets(val)
+                elif isinstance(node, list):
+                    for item in node:
+                        yield from iter_markets(item)
+
+            def try_count(market_name):
+                name = str(market_name or "").lower()
+                blocked = [" or ", "combined", "combine", "half", "1st", "first", "last", "either", "&", "(", ")"]
+                if any(token in name for token in blocked):
+                    return None
+                if name in {"anytime tryscorer", "anytime try scorer", "1+ try", "player to score a try", "player to score 1 try"}:
+                    return 1
+                if name in {"to score 2+ tries", "to score 2 or more tries", "player to score 2+ tries", "player to score 2 tries", "2+ tries"}:
+                    return 2
+                if name in {"to score 3+ tries", "to score 3 or more tries", "player to score 3+ tries", "player to score 3 tries", "3+ tries"}:
+                    return 3
+                return None
+
+            def collect_market(market, prices):
+                tries = try_count(market.get("name"))
+                if tries not in {1, 2, 3}:
+                    return
+                for selection in market.get("selections", []) or []:
+                    player = selection.get("name")
+                    price = (selection.get("price") or {}).get("winPrice")
+                    if not player or price is None:
+                        continue
+                    player = re.sub(r'\s+\d\+$', '', str(player)).strip()
+                    if player.lower() in {"no try", "no tryscorer"}:
+                        continue
+                    prices[f"{player} {tries}+"] = price
+
+            win_market = {}
+            for event in all_events if isinstance(all_events, list) else []:
+                if event.get("hasBIRStarted") is True or str(event.get("hasBIRStarted")).lower() == 'true':
+                    continue
+                if competition_id != 'none' and str(event.get("competitionId")) != str(competition_id):
+                    continue
+                if str(event.get("eventSort", "")).upper() not in {"", "MTCH"}:
+                    continue
+
+                event_id = event.get("id") or event.get("eventId")
+                if not event_id:
+                    continue
+                utc_ts = event.get("startTime")
+                if not utc_ts:
+                    continue
+                brisbane = pytz.timezone("Australia/Brisbane")
+                utc_dt = datetime.utcfromtimestamp(utc_ts).replace(tzinfo=pytz.utc)
+                brisbane_dt = utc_dt.astimezone(brisbane)
+                brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
+                event_name = event.get("displayName") or event.get("name")
+                if not event_name:
+                    continue
+
+                prices = {}
+
+                for market in event.get("marketList", []) or []:
+                    collect_market(market, prices)
+
+                direct_markets_url = f"https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Events/{event_id}/Markets"
+                direct_markets = await fetch_json(direct_markets_url, default=[])
+                if isinstance(direct_markets, dict):
+                    direct_markets = direct_markets.get("markets") or direct_markets.get("items") or []
+                if isinstance(direct_markets, list):
+                    for market in direct_markets:
+                        collect_market(market, prices)
+
+                groupings_url = f"https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Events/{event_id}/MarketGroupings"
+                groupings = await fetch_json(groupings_url, default=[])
+                if isinstance(groupings, dict):
+                    groupings = groupings.get("marketGroupings") or groupings.get("items") or []
+                for grouping in groupings if isinstance(groupings, list) else []:
+                    group_name = str(grouping.get("name") or "").lower()
+                    if "try" not in group_name and "scorer" not in group_name:
+                        continue
+                    grouping_id = grouping.get("id")
+                    if grouping_id is None:
+                        continue
+                    markets_url = f"https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Events/{event_id}/MarketGroupings/{grouping_id}/Markets"
+                    markets = await fetch_json(markets_url, default=[])
+                    if isinstance(markets, dict):
+                        markets = markets.get("markets") or markets.get("items") or []
+                    for market in markets if isinstance(markets, list) else []:
+                        collect_market(market, prices)
+
+                sport_card_url = f"https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Events/{event_id}/SportCard"
+                sport_card = await fetch_json(sport_card_url, default=None, retries=2, delay=0.8)
+                if sport_card:
+                    for market in iter_markets(sport_card):
+                        collect_market(market, prices)
+
+                if prices:
+                    win_market[(event_name, brisbane_date)] = prices
+
+            await browser.close()
+            return win_market
     
 
     async def SPORTSBET_scraper_football(self, competition_id='none', retries=3, delay=2):

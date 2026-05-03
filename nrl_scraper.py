@@ -336,6 +336,61 @@ async def main():
         closing_table_name="NRL Closing Odds",
     )
 
+    # -------- NRL Tryscorers --------
+    logger.info("Scraping Sportsbet NRL tryscorer data")
+    sb_scraper = sb.SBSportsScraper(sb_line_total_url, chosen_date=chosen_date)
+    sb_nrl_tryscorers = await sb_scraper.SPORTSBET_scraper_tryscorers(competition_id=3436)
+
+    time.sleep(3)
+
+    logger.info("Scraping Pointsbet NRL tryscorer data")
+    pb_scraper = pb.PBSportsScraper(pb_nrl_url, chosen_date=chosen_date)
+    pb_nrl_tryscorers = await pb_scraper.POINTSBET_scrape_nrl_tryscorers()
+
+    time.sleep(3)
+
+    logger.info("Scraping Unibet NRL tryscorer data")
+    ub_scraper = ub.UBSportsScraper(f.get_ub_url('rugby_league'), chosen_date=chosen_date)
+    ub_nrl_tryscorers = await ub_scraper.UNIBET_scrape_nrl_tryscorers(comp='NRL')
+
+    time.sleep(3)
+
+    logger.info("Scraping Palmerbet NRL tryscorer data")
+    palm_scraper = palm.PalmerBetSportsScraper(palm_nrl_url, chosen_date=chosen_date)
+    palm_nrl_tryscorers = await palm_scraper.PalmerBet_scrape_nrl_tryscorers(comp='Australia National Rugby League')
+
+    time.sleep(3)
+
+    logger.info("Scraping Betright NRL tryscorer data")
+    br_scraper = br.BRSportsScraper(f.get_betright_url(102), chosen_date=chosen_date)
+    br_nrl_tryscorers = await br_scraper.BETRIGHT_scraper_nrl_tryscorers(category_name='NRL')
+
+    bookmakers_tryscorers = {
+        "Sportsbet": sb_nrl_tryscorers,
+        "Pointsbet": pb_nrl_tryscorers,
+        "Unibet": ub_nrl_tryscorers,
+        "Palmerbet": palm_nrl_tryscorers,
+        "Betright": br_nrl_tryscorers,
+    }
+    tryscorer_counts = {k: sum(len(vv) for vv in v.values()) for k, v in bookmakers_tryscorers.items()}
+    logger.info(f"NRL tryscorer selection counts: {tryscorer_counts}")
+
+    price_cols_tryscorers = ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright"]
+
+    f.process_odds(
+        bookmakers_tryscorers,
+        price_cols_tryscorers,
+        table_name="NRL Tryscorers",
+        match_threshold=80,
+        outcomes=1,
+        names=True,
+        market="Tryscorer",
+        include_value=True,
+        min_mkt_percent=0,
+        upsert=True,
+        upsert_keys=["Match", "Date", "Result", "Value"],
+    )
+
 
 if __name__ == "__main__":
     asyncio.run(main())

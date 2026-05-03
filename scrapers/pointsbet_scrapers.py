@@ -1,6 +1,7 @@
 import time
 import asyncio, random
 import traceback
+import re
 
 from loguru                       import logger
 from random                       import randrange
@@ -141,6 +142,85 @@ class PBSportsScraper:
                     }
                 
         return win_market
+
+    async def POINTSBET_scrape_nrl_tryscorers(self):
+        """
+        Scrape NRL player tryscorer markets.
+        Returns {(match, date): {"Player 1+": price, "Player 2+": price, ...}}.
+        """
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
+            page = await browser.new_page(user_agent=ua)
+
+            await page.goto(self.url)
+            all_markets = await page.evaluate(f"() => fetch('{self.url}').then(response => response.json())")
+            if not all_markets:
+                logger.error("Failed to fetch markets")
+                await browser.close()
+                return {}
+
+            win_market = {}
+
+            async def fetch_event_detail(event):
+                event_key = event.get("key")
+                if not event_key:
+                    return event
+                detail_url = f"https://api.au.pointsbet.com/api/mes/v3/events/{event_key}"
+                try:
+                    return await page.evaluate(f"() => fetch('{detail_url}').then(response => response.json())")
+                except Exception as e:
+                    logger.warning(f"Pointsbet event detail fetch failed for {event_key}: {e}")
+                    return event
+
+            def try_count(market_name):
+                name = str(market_name or "").lower()
+                blocked = [" or ", "combined", "combine", "half", "1st", "first", "last", "either", "&", "(", ")"]
+                if any(token in name for token in blocked):
+                    return None
+                if name in {"anytime tryscorer", "anytime try scorer", "1+ try", "player to score a try", "player to score 1 try"}:
+                    return 1
+                if name in {"to score 2+ tries", "to score 2 or more tries", "player to score 2+ tries", "player to score 2 tries", "2+ tries"}:
+                    return 2
+                if name in {"to score 3+ tries", "to score 3 or more tries", "player to score 3+ tries", "player to score 3 tries", "3+ tries"}:
+                    return 3
+                return None
+
+            events = all_markets.get('events', [])
+            for event in events:
+                if event.get("isLive") is True:
+                    continue
+
+                detail = await fetch_event_detail(event)
+                date = detail.get("startsAt") or event.get("startsAt")
+                if not date:
+                    continue
+                dt_utc = datetime.fromisoformat(date.replace("Z", "+00:00"))
+                brisbane_dt = dt_utc.astimezone(ZoneInfo("Australia/Brisbane"))
+                brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
+
+                match_name = detail.get("name") or event.get("name")
+                if not match_name:
+                    continue
+
+                prices = win_market.setdefault((match_name, brisbane_date), {})
+                markets = (detail.get('fixedOddsMarkets') or []) + (detail.get('specialFixedOddsMarkets') or [])
+                for market in markets:
+                    tries = try_count(market.get("eventName") or market.get("eventClass") or market.get("name"))
+                    if tries not in {1, 2, 3}:
+                        continue
+                    for outcome in market.get("outcomes", []):
+                        player = outcome.get("playerId") or outcome.get("name")
+                        price = outcome.get("price")
+                        if not player or price is None:
+                            continue
+                        player = re.sub(r'\s+\d\+$', '', str(player)).strip()
+                        if not player or player.lower() in {"no try", "no tryscorer"}:
+                            continue
+                        prices[f"{player} {tries}+"] = price
+
+            await browser.close()
+            return {k: v for k, v in win_market.items() if v}
     
     async def POINTSBET_scrape_sport(self, market_type):
         """

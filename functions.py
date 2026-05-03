@@ -863,7 +863,7 @@ def process_odds(
 
     def strip_value_from_result(result):
         txt = str(result)
-        return re.sub(r'\s*[-+]?\d+(?:\.\d+)?\s*$', '', txt).strip()
+        return re.sub(r'\s*[-+]?\d+(?:\.\d+)?\+?\s*$', '', txt).strip()
 
     # Convert each bookmaker's markets into a DataFrame
     for name, markets in bookmakers.items():
@@ -901,7 +901,11 @@ def process_odds(
 
     logger.info(f"Merging {table_name} dfs")
     merged_df, mkt_percents = fuzzy_merge_prices(
-        dfs_list, active_price_cols, match_threshold=match_threshold, outcomes=outcomes
+        dfs_list,
+        active_price_cols,
+        match_threshold=match_threshold,
+        outcomes=outcomes,
+        names=names,
     )
 
     # Attach market %
@@ -953,7 +957,7 @@ def process_odds(
                 df_mapped["Value"] = df_mapped["Result"].apply(extract_signed_value_from_result)
             else:
                 df_mapped["Value"] = df_mapped["Result"].apply(extract_value_from_result)
-        if market and str(market).lower() in {"line", "total"}:
+        if market and str(market).lower() in {"line", "total", "tryscorer"}:
             df_mapped["Result"] = df_mapped["Result"].apply(strip_value_from_result)
     df_mapped["Best Bookie"] = df_mapped["Best Bookie"].apply(
         lambda x: ", ".join(x) if isinstance(x, list) else str(x)

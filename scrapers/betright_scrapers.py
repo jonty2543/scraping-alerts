@@ -245,6 +245,89 @@ class BRSportsScraper:
             await browser.close()
             return win_market
 
+    async def BETRIGHT_scraper_nrl_tryscorers(self, category_name='NRL', competition_id='none'):
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
+            page = await browser.new_page(user_agent=ua)
+
+            await page.goto(self.url)
+            all_categories = await page.evaluate(f"() => fetch('{self.url}').then(response => response.json())")
+            if not all_categories:
+                logger.error("Failed to fetch markets")
+                await browser.close()
+                return {}
+
+            def try_count(market_name):
+                name = str(market_name or "").lower()
+                blocked = [" or ", "combined", "combine", "half", "1st", "first", "last", "either", "&", "(", ")"]
+                if any(token in name for token in blocked):
+                    return None
+                if name in {"anytime tryscorer", "anytime try scorer", "1+ try", "player to score a try", "player to score 1 try"}:
+                    return 1
+                if name in {"to score 2+ tries", "to score 2 or more tries", "player to score 2+ tries", "player to score 2 tries", "2+ tries"}:
+                    return 2
+                if name in {"to score 3+ tries", "to score 3 or more tries", "player to score 3+ tries", "player to score 3 tries", "3+ tries"}:
+                    return 3
+                return None
+
+            win_market = {}
+
+            for category in all_categories.get("masterCategories", []):
+                if competition_id != 'none' and category.get("masterCategoryId") != competition_id:
+                    continue
+
+                for league in category.get("categories", []):
+                    if category_name and str(league.get("categoryName", "")).lower() != str(category_name).lower():
+                        continue
+
+                    league_id = league.get("categoryId")
+                    if not league_id:
+                        continue
+
+                    league_url = f'https://next-api.betright.com.au/Sports/Category?categoryId={league_id}'
+                    league_json = await page.evaluate(f"() => fetch('{league_url}').then(response => response.json())")
+
+                    for mc in league_json.get("masterCategories", []):
+                        for cat in mc.get("categories", []):
+                            for master_event in cat.get("masterEvents", []):
+                                master_event_id = master_event.get("masterEventId")
+                                match = master_event.get("masterEventName")
+                                if not master_event_id or not match or " v " not in match:
+                                    continue
+
+                                date = master_event.get("maxAdvertisedStartTimeUtc")
+                                if not date:
+                                    continue
+                                dt_utc = datetime.fromisoformat(date.replace("Z", "+00:00"))
+                                brisbane_dt = dt_utc.astimezone(ZoneInfo("Australia/Brisbane"))
+                                brisbane_date = brisbane_dt.date().strftime("%Y-%m-%d")
+
+                                details_url = f'https://next-api.betright.com.au/Sports/MasterEventEvents?masterEventId={master_event_id}'
+                                details_json = await page.evaluate(f"() => fetch('{details_url}').then(response => response.json())")
+                                events = details_json.get("events", []) if isinstance(details_json, dict) else []
+
+                                prices = {}
+                                for event in events:
+                                    tries = try_count(event.get("eventName") or event.get("eventClassDisplayName") or event.get("eventClass"))
+                                    if tries not in {1, 2, 3}:
+                                        continue
+                                    for outcome in event.get("outcomes", []):
+                                        player = outcome.get("outcomeName")
+                                        price = outcome.get("price")
+                                        if not player or price is None:
+                                            continue
+                                        player = re.sub(r'\s+\d\+$', '', str(player)).strip()
+                                        if player.lower() in {"no try", "no tryscorer"}:
+                                            continue
+                                        prices[f"{player} {tries}+"] = price
+
+                                if prices:
+                                    win_market[(match, brisbane_date)] = prices
+
+            await browser.close()
+            return win_market
+
         
     
     async def BETRIGHT_scrape_football(self, competition_id='none', retries=3, delay=2):
