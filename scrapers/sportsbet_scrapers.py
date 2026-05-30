@@ -12,6 +12,103 @@ from playwright.async_api         import async_playwright
 from datetime import datetime
 import pytz
 
+TOTAL_MARKET_BLOCKLIST = (
+    "1st",
+    "2nd",
+    "half",
+    "period",
+    "quarter",
+    "team",
+    "bands",
+    "double",
+    "exact",
+    "margin",
+    "line",
+    "handicap",
+    "spread",
+    "tries",
+    "try",
+    "alternative",
+    "alternate",
+    "race to",
+    "winning margin",
+    "highest scoring",
+    "correct score",
+    "odd/even",
+    "odd even",
+)
+
+MAIN_TOTAL_MARKET_PHRASES = (
+    "total match points",
+    "match total points",
+    "match points total",
+    "total points over/under",
+    "total points over under",
+    "total points",
+    "match total",
+    "game total",
+    "total score",
+)
+
+
+def _normalise_market_text(text):
+    return re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9]+', ' ', str(text).lower())).strip()
+
+
+def _event_team_names(event):
+    names = []
+    for key in ("participants", "competitors", "teams"):
+        for item in event.get(key, []) or []:
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("displayName") or item.get("participantName")
+                if name:
+                    names.append(str(name))
+
+    event_name = event.get("displayName") or event.get("name") or ""
+    parts = re.split(r'\s+(?:vs?|versus)\s+', str(event_name), flags=re.IGNORECASE)
+    if len(parts) == 2:
+        names.extend(part.strip() for part in parts if part.strip())
+
+    seen = set()
+    unique = []
+    for name in names:
+        norm = _normalise_market_text(name)
+        if norm and norm not in seen:
+            seen.add(norm)
+            unique.append(name)
+    return unique
+
+
+def _looks_like_team_total(market_name, event):
+    market_norm = _normalise_market_text(market_name)
+    market_words = set(market_norm.split())
+    for team in _event_team_names(event):
+        team_norm = _normalise_market_text(team)
+        if not team_norm:
+            continue
+        if team_norm in market_norm:
+            return True
+        team_words = {word for word in team_norm.split() if len(word) > 3}
+        if team_words & market_words:
+            return True
+    return False
+
+
+def _is_main_total_market(market_name, event):
+    name = str(market_name or "").lower()
+    if not name:
+        return False
+    if any(token in name for token in TOTAL_MARKET_BLOCKLIST):
+        return False
+    if _looks_like_team_total(name, event):
+        return False
+
+    name_norm = _normalise_market_text(name)
+    if name_norm in {"total", "totals"}:
+        return True
+    return any(phrase in name_norm for phrase in MAIN_TOTAL_MARKET_PHRASES)
+
+
 class SBRacingScraper:
     def __init__(self, url, race_code, chosen_date):
         """
@@ -494,13 +591,7 @@ class SBSportsScraper:
                         if not has_line_name and not has_line_selections:
                             return
                     else:
-                        has_total_name = "total" in market_name or "points" in market_name or "score" in market_name
-                        has_over_under = (
-                            len(selection_names) >= 2 and
-                            any("over" in n for n in selection_names) and
-                            any("under" in n for n in selection_names)
-                        )
-                        if not has_total_name and not has_over_under:
+                        if not _is_main_total_market(market_name, event):
                             return
                     collect_market(market)
 
