@@ -129,6 +129,18 @@ def get_no_vig_odds_multiway(odds: list):
 
 print(get_no_vig_odds_multiway([2.56, 1.51]))
 
+TEAM_ALIASES = {
+    "canterbury bulldogs": "canterbury bankstown bulldogs",
+    "canterbury bankstown bulldogs": "canterbury bankstown bulldogs",
+    "cronulla sharks": "cronulla sutherland sharks",
+    "cronulla sutherland sharks": "cronulla sutherland sharks",
+}
+
+
+def canonical_team_name(team):
+    team = str(team or "").strip().lower()
+    return TEAM_ALIASES.get(team, team)
+
 
 def normalize_match(match):
     if pd.isna(match):
@@ -211,6 +223,7 @@ def normalize_players_match(match: str) -> str:
         # Remove extra chars and lowercase
         side = re.sub(r'[^a-zA-Z0-9 ]', ' ', side)
         side = re.sub(r'\s+', ' ', side).strip().lower()
+        side = canonical_team_name(side)
         normalized_sides.append(side)
     
     # Always sort alphabetically
@@ -835,8 +848,25 @@ def _prune_stale_upsert_rows(
         logger.warning(f"Skipping stale prune for {table_name}: missing conflict or scope columns.")
         return
 
-    latest_scopes = latest_df[scope_cols].drop_duplicates()
-    scoped_current = current_df.merge(latest_scopes, on=scope_cols, how="inner")
+    def add_scope_key(df):
+        out = df.copy()
+        norm_cols = []
+        for col in scope_cols:
+            norm_col = f"__scope_{col}"
+            if col == "Match":
+                out[norm_col] = out[col].apply(normalize_players_match)
+            elif col == "Date":
+                out[norm_col] = pd.to_datetime(out[col]).dt.strftime("%Y-%m-%d")
+            else:
+                out[norm_col] = out[col]
+            norm_cols.append(norm_col)
+        return out, norm_cols
+
+    current_scoped_df, norm_scope_cols = add_scope_key(current_df)
+    latest_scoped_df, _ = add_scope_key(latest_df)
+
+    latest_scopes = latest_scoped_df[norm_scope_cols].drop_duplicates()
+    scoped_current = current_scoped_df.merge(latest_scopes, on=norm_scope_cols, how="inner")
     if scoped_current.empty:
         return
 
