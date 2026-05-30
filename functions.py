@@ -817,6 +817,55 @@ def _store_closing_odds(
             logger.warning(f"Failed to insert closing rows into {closing_table}: {e}")
 
 
+def _prune_stale_upsert_rows(
+    supabase,
+    table_name: str,
+    current_df: pd.DataFrame,
+    latest_df: pd.DataFrame,
+    conflict_cols: list,
+    scope_cols: list,
+):
+    if current_df.empty or latest_df.empty:
+        logger.warning(f"Skipping stale prune for {table_name}: current or latest snapshot is empty.")
+        return
+
+    conflict_cols = [col for col in conflict_cols if col in current_df.columns and col in latest_df.columns]
+    scope_cols = [col for col in scope_cols if col in current_df.columns and col in latest_df.columns]
+    if not conflict_cols or not scope_cols:
+        logger.warning(f"Skipping stale prune for {table_name}: missing conflict or scope columns.")
+        return
+
+    latest_scopes = latest_df[scope_cols].drop_duplicates()
+    scoped_current = current_df.merge(latest_scopes, on=scope_cols, how="inner")
+    if scoped_current.empty:
+        return
+
+    latest_keys = latest_df[conflict_cols].drop_duplicates()
+    stale_rows = (
+        scoped_current[conflict_cols]
+        .drop_duplicates()
+        .merge(latest_keys, on=conflict_cols, how="left", indicator=True)
+        .loc[lambda df: df["_merge"] == "left_only", conflict_cols]
+    )
+    if stale_rows.empty:
+        return
+
+    stale_rows = make_json_safe(stale_rows)
+    stale_records = stale_rows.to_dict(orient="records")
+    deleted = 0
+    for rec in stale_records:
+        delete_query = supabase.table(table_name).delete()
+        for key in conflict_cols:
+            delete_query = delete_query.eq(key, rec.get(key))
+        try:
+            delete_query.execute()
+            deleted += 1
+        except Exception as e:
+            logger.warning(f"Failed deleting stale row from {table_name} with keys {rec}: {e}")
+
+    logger.info(f"Pruned {deleted} stale rows from {table_name}.")
+
+
 def process_odds(
     bookmakers: dict,
     price_cols: list,
@@ -829,6 +878,8 @@ def process_odds(
     min_mkt_percent=80,
     upsert=False,
     upsert_keys=None,
+    prune_stale_upsert=False,
+    prune_scope_keys=None,
     store_closing_odds=False,
     closing_table_name=None,
 ):
@@ -1137,6 +1188,15 @@ def process_odds(
         else:
             logger.info(f"Upserting {table_name} records on {conflict_cols}...")
             if records:
+                if prune_stale_upsert:
+                    _prune_stale_upsert_rows(
+                        supabase=supabase,
+                        table_name=table_name,
+                        current_df=current_df,
+                        latest_df=df_mapped,
+                        conflict_cols=conflict_cols,
+                        scope_cols=prune_scope_keys or ["Match", "Date"],
+                    )
                 try:
                     supabase.table(table_name).upsert(
                         records,

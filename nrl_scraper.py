@@ -389,6 +389,8 @@ async def main():
         min_mkt_percent=0,
         upsert=True,
         upsert_keys=["Match", "Date", "Result", "Value"],
+        prune_stale_upsert=True,
+        prune_scope_keys=["Match", "Date"],
     )
 
 
