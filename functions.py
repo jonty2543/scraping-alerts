@@ -670,6 +670,49 @@ def make_json_safe(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].dt.strftime("%Y-%m-%d")
     return df
 
+
+def _snapshot_records(df: Optional[pd.DataFrame]) -> list:
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return []
+
+    safe_df = make_json_safe(df)
+    safe_df = safe_df.replace([np.nan, np.inf, -np.inf], None)
+    safe_df = safe_df.astype(object).where(pd.notna(safe_df), None)
+    records = safe_df.to_dict(orient="records")
+    return json.loads(json.dumps(records, default=str))
+
+
+def write_betting_odds_snapshot(
+    h2h: Optional[pd.DataFrame] = None,
+    line: Optional[pd.DataFrame] = None,
+    total: Optional[pd.DataFrame] = None,
+    tryscorer: Optional[pd.DataFrame] = None,
+):
+    generated_at = datetime.now(ZoneInfo("Australia/Brisbane")).isoformat()
+    payload = {
+        "id": "current",
+        "h2h": _snapshot_records(h2h),
+        "line": _snapshot_records(line),
+        "total": _snapshot_records(total),
+        "tryscorer": _snapshot_records(tryscorer),
+        "generated_at": generated_at,
+        "updated_at": generated_at,
+    }
+
+    try:
+        supabase.schema("summary").table("betting_odds_snapshot").upsert(
+            payload,
+            on_conflict="id",
+        ).execute()
+        logger.info(
+            "Upserted betting odds snapshot: "
+            f"h2h={len(payload['h2h'])}, line={len(payload['line'])}, "
+            f"total={len(payload['total'])}, tryscorer={len(payload['tryscorer'])}"
+        )
+    except Exception as e:
+        logger.error(f"Failed to upsert summary.betting_odds_snapshot: {e}")
+        raise
+
 def _cleanup_recent_flucs(supabase, time_threshold, batch_size=1000):
     # Delete old flucs in batches. Prefer id-based deletes when id exists.
     try:

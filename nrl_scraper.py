@@ -205,7 +205,7 @@ async def main():
     logger.info(f"NRL h2h market counts: {h2h_counts}")
     price_cols_h2h = ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright"]
 
-    f.process_odds(
+    h2h_df, _ = f.process_odds(
         bookmakers_h2h,
         price_cols_h2h,
         table_name="NRL Odds",
@@ -262,7 +262,7 @@ async def main():
 
     price_cols_line = ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright"]
 
-    f.process_line_total_wide(
+    line_df = f.process_line_total_wide(
         bookmakers_line,
         price_cols_line,
         table_name="NRL Line Odds",
@@ -324,7 +324,7 @@ async def main():
 
     price_cols_total = ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright"]
 
-    f.process_line_total_wide(
+    total_df = f.process_line_total_wide(
         bookmakers_total,
         price_cols_total,
         table_name="NRL Total Odds",
@@ -377,7 +377,7 @@ async def main():
 
     price_cols_tryscorers = ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright"]
 
-    f.process_odds(
+    tryscorer_df, _ = f.process_odds(
         bookmakers_tryscorers,
         price_cols_tryscorers,
         table_name="NRL Tryscorers",
@@ -391,6 +391,13 @@ async def main():
         upsert_keys=["Match", "Date", "Result", "Value"],
         prune_stale_upsert=True,
         prune_scope_keys=["Match", "Date"],
+    )
+
+    f.write_betting_odds_snapshot(
+        h2h=h2h_df,
+        line=line_df,
+        total=total_df,
+        tryscorer=tryscorer_df,
     )
 
 
