@@ -76,6 +76,7 @@ sb_ufc_url = 'https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sp
 
 
 WEBHOOK_ARBS = os.getenv("WEBHOOK_ARBS", "")
+WEBHOOK_NRL_ARBS = os.getenv("WEBHOOK_NRL_ARBS", "")
 WEBHOOK_PROBS = os.getenv("WEBHOOK_PROBS", "")
 WEBHOOK_TEST = os.getenv("WEBHOOK_TEST", "")
 
@@ -468,20 +469,36 @@ def fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=80, result
     return base_df, mkt_percents
 
 
-def arb_alert(arbs, test=False):
+def _split_webhooks(*values):
+    webhooks = []
+    for value in values:
+        if not value:
+            continue
+        if isinstance(value, str):
+            candidates = value.split(",")
+        else:
+            candidates = value
+        for webhook in candidates:
+            webhook = str(webhook).strip()
+            if webhook:
+                webhooks.append(webhook)
+    return webhooks
+
+
+def arb_alert(arbs, test=False, extra_webhooks=None):
     if not test:
         try:
             with open("alerts_sent.txt", "r") as f:
                 sent_alerts = set(f.read().splitlines())
         except FileNotFoundError:
             sent_alerts = set()
-            
-        webhook = WEBHOOK_ARBS
+
+        webhooks = _split_webhooks(WEBHOOK_ARBS, extra_webhooks)
     
     else:
-        webhook = WEBHOOK_TEST
+        webhooks = _split_webhooks(WEBHOOK_TEST)
 
-    if not webhook:
+    if not webhooks:
         logger.warning("ARB webhook is not set. Skipping arb alerts.")
         return
     
@@ -505,18 +522,21 @@ def arb_alert(arbs, test=False):
             outcomes_text = outcomes[0]
         
         message = f"{match_name}: {mkt_percent:.2f}% market; {outcomes_text}"
-    
-        try:
-            response = requests.post(webhook, json={"content": message})
-            response.raise_for_status()
-            
-            if not test:
-                # Append the match to the file after successful send
-                with open("alerts_sent.txt", "a") as f:
-                    f.write(f"{match_name} {chosen_date}\n")
-    
-        except Exception as e:
-            logger.error(f"Webhook failed: {e}")
+
+        primary_sent = False
+        for idx, webhook in enumerate(webhooks):
+            try:
+                response = requests.post(webhook, json={"content": message})
+                response.raise_for_status()
+                if idx == 0:
+                    primary_sent = True
+            except Exception as e:
+                logger.error(f"Webhook failed: {e}")
+
+        if not test and primary_sent:
+            # Mark sent after the primary webhook succeeds; extra webhooks are best-effort.
+            with open("alerts_sent.txt", "a") as f:
+                f.write(f"{match_name} {chosen_date}\n")
             
 def prob_alert(df, diff_lim, test=False):
     if not test:
@@ -1323,7 +1343,8 @@ def process_odds(
         (mkt_percents["mkt_percent"] > 90) & 
         (mkt_percents["mkt_percent"] < 100)
     ]
-    arb_alert(arbs)
+    extra_arb_webhooks = WEBHOOK_NRL_ARBS if table_name.startswith("NRL") else None
+    arb_alert(arbs, extra_webhooks=extra_arb_webhooks)
 
     return df_mapped, mkt_percents
 
