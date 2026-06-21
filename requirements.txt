@@ -2,6 +2,7 @@ pytz
 loguru
 pandas
 numpy
+openpyxl
 requests
 rapidfuzz
 thefuzz

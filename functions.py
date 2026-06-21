@@ -691,6 +691,121 @@ def make_json_safe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+HISTORY_BOOKMAKERS = ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright"]
+
+
+def _json_safe_records(df: pd.DataFrame) -> list:
+    safe_df = make_json_safe(df)
+    safe_df = safe_df.replace([np.nan, np.inf, -np.inf], None)
+    safe_df = safe_df.astype(object).where(pd.notna(safe_df), None)
+    records = safe_df.to_dict(orient="records")
+    return json.loads(json.dumps(records, default=str, allow_nan=False))
+
+
+def _is_positive_price(value) -> bool:
+    try:
+        return pd.notna(value) and float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _first_valid_line_value(row):
+    for value in row:
+        try:
+            if pd.notna(value):
+                return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _infer_history_market(source_table_name: str, df: pd.DataFrame, history_market_name: Optional[str] = None):
+    if history_market_name:
+        return history_market_name
+
+    if "Market" in df.columns:
+        markets = df["Market"].dropna()
+        markets = markets[markets.astype(str).str.strip() != ""]
+        if not markets.empty:
+            return str(markets.iloc[0])
+
+    source_market_map = {
+        "NRL Odds": "H2H",
+        "NRL Line Odds": "Line",
+        "NRL Total Odds": "Total",
+    }
+    return source_market_map.get(source_table_name)
+
+
+def _normalize_market_history_rows(
+    rows_df: pd.DataFrame,
+    source_table_name: str,
+    timestamp_col: str,
+    timestamp_value: str,
+    history_market_name: Optional[str] = None,
+) -> pd.DataFrame:
+    if rows_df.empty:
+        return rows_df
+
+    out = rows_df.copy()
+    market_name = _infer_history_market(source_table_name, out, history_market_name)
+    if market_name:
+        out["Market"] = market_name
+
+    line_cols = []
+    for bookie in HISTORY_BOOKMAKERS:
+        odds_col = f"{bookie}_odds"
+        line_col = f"{bookie}_line"
+        if odds_col in out.columns:
+            if bookie not in out.columns:
+                out[bookie] = out[odds_col]
+            else:
+                out[bookie] = out[bookie].where(out[bookie].apply(_is_positive_price), out[odds_col])
+        if line_col in out.columns:
+            line_cols.append(line_col)
+
+    if "Value" not in out.columns:
+        out["Value"] = None
+    if line_cols:
+        derived_values = out[line_cols].apply(_first_valid_line_value, axis=1)
+        out["Value"] = out["Value"].where(pd.notna(out["Value"]), derived_values)
+
+    out[timestamp_col] = timestamp_value
+    out["Source Table"] = source_table_name
+
+    history_cols = [
+        "Match",
+        "Date",
+        "Result",
+        "Market",
+        "Value",
+        "Best Bookie",
+        "Best Price",
+        "Market %",
+        *HISTORY_BOOKMAKERS,
+        timestamp_col,
+        "Source Table",
+    ]
+    return out[[col for col in history_cols if col in out.columns]]
+
+
+def _history_key_cols(rows_df: pd.DataFrame) -> list:
+    key_cols = [col for col in ["Match", "Date", "Result", "Market"] if col in rows_df.columns]
+    if "Value" in rows_df.columns and rows_df["Value"].notna().any():
+        key_cols.append("Value")
+    return key_cols
+
+
+def _apply_supabase_filters(query, rec: dict, key_cols: list):
+    for key in key_cols:
+        value = rec.get(key)
+        if value is None:
+            query = query.is_(key, "null")
+        else:
+            query = query.eq(key, value)
+    return query
+
+
 def _snapshot_records(df: Optional[pd.DataFrame]) -> list:
     if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         return []
@@ -809,6 +924,7 @@ def _store_closing_odds(
     price_cols: list,
     source_table_name: str,
     closing_table_name: Optional[str] = None,
+    history_market_name: Optional[str] = None,
 ):
     if current_df.empty:
         return
@@ -848,7 +964,7 @@ def _store_closing_odds(
     if valid_price_cols:
         closing_rows = closing_rows.loc[
             closing_rows[valid_price_cols].apply(
-                lambda row: any(pd.notna(v) and float(v) > 0 for v in row),
+                lambda row: any(_is_positive_price(v) for v in row),
                 axis=1
             )
         ]
@@ -856,18 +972,21 @@ def _store_closing_odds(
         return
 
     now_str = datetime.now(pytz.timezone("Australia/Brisbane")).strftime("%Y-%m-%d %H:%M:%S")
-    closing_rows = closing_rows.copy()
-    closing_rows["Closed Time"] = now_str
-    closing_rows["Source Table"] = source_table_name
-    closing_rows = make_json_safe(closing_rows)
-    records = closing_rows.to_dict(orient="records")
+    closing_rows = _normalize_market_history_rows(
+        closing_rows,
+        source_table_name=source_table_name,
+        timestamp_col="Closed Time",
+        timestamp_value=now_str,
+        history_market_name=history_market_name,
+    )
+    history_key_cols = _history_key_cols(closing_rows)
+    records = _json_safe_records(closing_rows)
     closing_table = closing_table_name or _derive_closing_table_name(source_table_name)
 
     try:
         for rec in records:
             delete_query = supabase.table(closing_table).delete()
-            for key in key_cols:
-                delete_query = delete_query.eq(key, rec.get(key))
+            delete_query = _apply_supabase_filters(delete_query, rec, history_key_cols)
             delete_query.execute()
     except Exception as e:
         logger.warning(f"Skipping closing capture for {source_table_name}: failed to prepare {closing_table}: {e}")
@@ -891,6 +1010,79 @@ def _store_closing_odds(
                 logger.warning(f"Failed to insert closing rows into {closing_table}: {retry_e}")
         else:
             logger.warning(f"Failed to insert closing rows into {closing_table}: {e}")
+
+
+def _derive_open_table_name(table_name: str) -> str:
+    if table_name.endswith(" Odds"):
+        return f"{table_name[:-5]} Open Odds"
+    return f"{table_name} Open"
+
+
+def _store_open_odds(
+    supabase,
+    latest_df: pd.DataFrame,
+    price_cols: list,
+    source_table_name: str,
+    open_table_name: Optional[str] = None,
+    history_market_name: Optional[str] = None,
+):
+    if latest_df.empty:
+        return
+
+    valid_price_cols = [col for col in price_cols if col in latest_df.columns]
+    if valid_price_cols:
+        latest_df = latest_df.loc[
+            latest_df[valid_price_cols].apply(
+                lambda row: any(_is_positive_price(v) for v in row),
+                axis=1
+            )
+        ]
+    if latest_df.empty:
+        return
+
+    now_str = datetime.now(pytz.timezone("Australia/Brisbane")).strftime("%Y-%m-%d %H:%M:%S")
+    open_rows = _normalize_market_history_rows(
+        latest_df,
+        source_table_name=source_table_name,
+        timestamp_col="Opened Time",
+        timestamp_value=now_str,
+        history_market_name=history_market_name,
+    )
+    history_key_cols = _history_key_cols(open_rows)
+    records = _json_safe_records(open_rows)
+    open_table = open_table_name or _derive_open_table_name(source_table_name)
+    history_price_cols = [bookie for bookie in HISTORY_BOOKMAKERS if any(bookie in rec for rec in records)]
+
+    inserted = 0
+    updated = 0
+    try:
+        for rec in records:
+            select_query = supabase.table(open_table).select("*")
+            select_query = _apply_supabase_filters(select_query, rec, history_key_cols)
+            existing_response = select_query.limit(1).execute()
+            existing = existing_response.data[0] if existing_response.data else None
+
+            if not existing:
+                supabase.table(open_table).insert(rec).execute()
+                inserted += 1
+                continue
+
+            updates = {}
+            for bookie in history_price_cols:
+                if _is_positive_price(rec.get(bookie)) and not _is_positive_price(existing.get(bookie)):
+                    updates[bookie] = rec.get(bookie)
+
+            if updates:
+                update_query = supabase.table(open_table).update(updates)
+                update_query = _apply_supabase_filters(update_query, rec, history_key_cols)
+                update_query.execute()
+                updated += 1
+    except Exception as e:
+        logger.warning(f"Failed to store open odds into {open_table}: {e}")
+        return
+
+    if inserted or updated:
+        logger.info(f"Stored open odds in {open_table}: inserted={inserted}, filled_existing={updated}.")
 
 
 def _prune_stale_upsert_rows(
@@ -975,6 +1167,9 @@ def process_odds(
     prune_scope_keys=None,
     store_closing_odds=False,
     closing_table_name=None,
+    store_open_odds=False,
+    open_table_name=None,
+    history_market_name=None,
 ):
     """
     Process odds from multiple bookmakers, merge, calculate market %, 
@@ -1159,6 +1354,17 @@ def process_odds(
             price_cols=active_price_cols,
             source_table_name=table_name,
             closing_table_name=closing_table_name,
+            history_market_name=history_market_name,
+        )
+
+    if store_open_odds:
+        _store_open_odds(
+            supabase=supabase,
+            latest_df=df_mapped,
+            price_cols=active_price_cols,
+            source_table_name=table_name,
+            open_table_name=open_table_name,
+            history_market_name=history_market_name,
         )
 
     # --- Price Fluctuation Analysis ---
@@ -1358,6 +1564,9 @@ def process_line_total_wide(
     upsert_keys=None,
     store_closing_odds: bool = False,
     closing_table_name: Optional[str] = None,
+    store_open_odds: bool = False,
+    open_table_name: Optional[str] = None,
+    history_market_name: Optional[str] = None,
 ):
     """
     Process line/total odds into wide format keyed by (Match, Date, Result).
@@ -1571,6 +1780,17 @@ def process_line_total_wide(
             price_cols=odds_only,
             source_table_name=table_name,
             closing_table_name=closing_table_name,
+            history_market_name=history_market_name or market_kind.capitalize(),
+        )
+
+    if store_open_odds:
+        _store_open_odds(
+            supabase=supabase,
+            latest_df=df_out,
+            price_cols=odds_only,
+            source_table_name=table_name,
+            open_table_name=open_table_name,
+            history_market_name=history_market_name or market_kind.capitalize(),
         )
 
     # Fluctuation tracking on _odds columns

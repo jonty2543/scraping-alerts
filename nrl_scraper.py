@@ -214,6 +214,9 @@ async def main():
         upsert_keys=["Match", "Date", "Result"],
         store_closing_odds=True,
         closing_table_name="NRL Closing Odds",
+        store_open_odds=True,
+        open_table_name="NRL Open Odds",
+        history_market_name="H2H",
     )
 
     # -------- NRL Line --------
@@ -272,6 +275,9 @@ async def main():
         upsert_keys=["Match", "Date", "Result"],
         store_closing_odds=True,
         closing_table_name="NRL Closing Odds",
+        store_open_odds=True,
+        open_table_name="NRL Open Odds",
+        history_market_name="Line",
     )
 
     # -------- NRL Total --------
@@ -334,6 +340,9 @@ async def main():
         upsert_keys=["Match", "Date", "Result"],
         store_closing_odds=True,
         closing_table_name="NRL Closing Odds",
+        store_open_odds=True,
+        open_table_name="NRL Open Odds",
+        history_market_name="Total",
     )
 
     # -------- NRL Tryscorers --------
