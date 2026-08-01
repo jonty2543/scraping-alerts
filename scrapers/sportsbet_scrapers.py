@@ -12,6 +12,8 @@ from playwright.async_api         import async_playwright
 from datetime import datetime
 import pytz
 
+from scrapers.margin_utils import canonical_margin_selection, is_target_margin_market
+
 TOTAL_MARKET_BLOCKLIST = (
     "1st",
     "2nd",
@@ -468,6 +470,21 @@ class SBSportsScraper:
 
                 def collect_market(market):
                     selections = market.get("selections", []) or []
+                    if market_kind == 'margin':
+                        parsed_margin = {}
+                        for selection in selections:
+                            result = canonical_margin_selection(
+                                selection.get("name"),
+                                participant=selection.get("participant"),
+                            )
+                            price = (selection.get("price") or {}).get("winPrice")
+                            if result and price is not None:
+                                parsed_margin[result] = price
+
+                        if is_target_margin_market(market.get("name"), list(parsed_margin)):
+                            event_prices.update(parsed_margin)
+                        return
+
                     if len(selections) != 2:
                         return
 
@@ -579,6 +596,18 @@ class SBSportsScraper:
                     market_name = str(market.get("name", "")).lower()
                     selections = market.get("selections", []) or []
                     selection_names = [str(sel.get("name", "")).lower() for sel in selections]
+
+                    if market_kind == 'margin':
+                        canonical = [
+                            canonical_margin_selection(
+                                sel.get("name"),
+                                participant=sel.get("participant"),
+                            )
+                            for sel in selections
+                        ]
+                        if is_target_margin_market(market_name, canonical):
+                            collect_market(market)
+                        return
 
                     if any(token in market_name for token in ["1st", "2nd", "half", "period", "quarter", "team", "margin"]):
                         return

@@ -2,6 +2,7 @@ import time
 import asyncio
 import traceback
 import re
+import requests
 
 from loguru                       import logger
 from random                       import randrange
@@ -9,6 +10,8 @@ from playwright_stealth           import stealth_async
 from playwright.async_api         import async_playwright
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+from scrapers.margin_utils import canonical_margin_selection, is_target_margin_market
  
 class UBSportsScraper:
     def __init__(self, url, chosen_date):
@@ -322,6 +325,76 @@ class UBSportsScraper:
             # Case 2: group has no subGroups
             else:
                 process_events(group.get("events", []), win_market)
+
+        return win_market
+
+    async def UNIBET_scrape_nrl_margin(self, comp="NRL"):
+        """Fetch full Kambi event offers and normalize the 1-12/13+ margin selections."""
+        response = requests.get(self.url, timeout=20)
+        response.raise_for_status()
+        payload = response.json()
+        win_market = {}
+
+        try:
+            groups = payload["layout"]["sections"][1]["widgets"][0]["matches"]["groups"]
+        except (KeyError, IndexError, TypeError) as exc:
+            logger.error(f"Unexpected JSON structure from Unibet: {exc}")
+            return win_market
+
+        def iter_comp_events(group):
+            if group.get("subGroups"):
+                for subgroup in group.get("subGroups", []):
+                    yield from subgroup.get("events", [])
+            else:
+                yield from group.get("events", [])
+
+        for group in groups:
+            if comp and group.get("name") != comp:
+                continue
+            for comp_event in iter_comp_events(group):
+                event = comp_event.get("event", {})
+                if event.get("state") != "NOT_STARTED":
+                    continue
+                event_id = event.get("id")
+                match_name = event.get("englishName") or event.get("name")
+                starts_at = event.get("start")
+                if not event_id or not match_name or not starts_at:
+                    continue
+
+                detail_url = (
+                    "https://eu-offering-api.kambicdn.com/offering/v2018/ub/"
+                    f"betoffer/event/{event_id}.json?lang=en_AU&market=AU"
+                )
+                try:
+                    detail_response = requests.get(detail_url, timeout=20)
+                    detail_response.raise_for_status()
+                    detail = detail_response.json()
+                except Exception as exc:
+                    logger.warning(f"Unibet margin detail fetch failed for {event_id}: {exc}")
+                    continue
+
+                for offer in detail.get("betOffers", []):
+                    criterion = offer.get("criterion", {})
+                    market_name = criterion.get("englishLabel") or criterion.get("label") or ""
+                    parsed = {}
+                    for outcome in offer.get("outcomes", []):
+                        result = canonical_margin_selection(
+                            outcome.get("englishLabel") or outcome.get("label"),
+                            participant=outcome.get("participant"),
+                            lower_limit=outcome.get("lowerLimit"),
+                            upper_limit=outcome.get("upperLimit"),
+                        )
+                        raw_odds = outcome.get("oddsDecimal")
+                        if raw_odds is None and outcome.get("odds") is not None:
+                            raw_odds = float(outcome["odds"]) / 1000
+                        if result and raw_odds is not None and outcome.get("status") != "SUSPENDED":
+                            parsed[result] = float(raw_odds)
+
+                    if is_target_margin_market(market_name, list(parsed)):
+                        dt_utc = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+                        brisbane_date = dt_utc.astimezone(ZoneInfo("Australia/Brisbane")).date().isoformat()
+                        win_market[match_name, brisbane_date] = parsed
+                        break
 
         return win_market
 

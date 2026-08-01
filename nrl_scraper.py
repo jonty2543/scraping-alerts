@@ -345,6 +345,69 @@ async def main():
         history_market_name="Total",
     )
 
+    # -------- NRL Winning Margin (1-12 / 13+) --------
+    logger.info("Scraping Sportsbet NRL 1-12 / 13+ margin data")
+    sb_scraper = sb.SBSportsScraper(sb_line_total_url, chosen_date=chosen_date)
+    sb_nrl_margin = await sb_scraper.SPORTSBET_scraper_lines_totals(
+        market_kind='margin',
+        competition_id=3436,
+    )
+
+    time.sleep(3)
+
+    logger.info("Scraping Pointsbet NRL 1-12 / 13+ margin data")
+    pb_scraper = pb.PBSportsScraper(pb_nrl_url, chosen_date=chosen_date)
+    pb_nrl_margin = await pb_scraper.POINTSBET_scrape_nrl_margin()
+
+    time.sleep(3)
+
+    logger.info("Scraping Unibet NRL 1-12 / 13+ margin data")
+    ub_scraper = ub.UBSportsScraper(f.get_ub_url('rugby_league'), chosen_date=chosen_date)
+    ub_nrl_margin = await ub_scraper.UNIBET_scrape_nrl_margin(comp='NRL')
+
+    time.sleep(3)
+
+    logger.info("Scraping Palmerbet NRL 1-12 / 13+ margin data")
+    palm_scraper = palm.PalmerBetSportsScraper(palm_nrl_url, chosen_date=chosen_date)
+    palm_nrl_margin = await palm_scraper.PalmerBet_scrape_nrl_margin(
+        comp='Australia National Rugby League'
+    )
+
+    time.sleep(3)
+
+    logger.info("Scraping Betright NRL 1-12 / 13+ margin data")
+    br_scraper = br.BRSportsScraper(f.get_betright_url(102), chosen_date=chosen_date)
+    br_nrl_margin = await br_scraper.BETRIGHT_scraper_masterevent(
+        market_kind='margin',
+        category_name='NRL',
+    )
+
+    bookmakers_margin = {
+        "Sportsbet": sb_nrl_margin,
+        "Pointsbet": pb_nrl_margin,
+        "Unibet": ub_nrl_margin,
+        "Palmerbet": palm_nrl_margin,
+        "Betright": br_nrl_margin,
+    }
+    margin_counts = {k: len(v) for k, v in bookmakers_margin.items()}
+    logger.info(f"NRL margin market counts: {margin_counts}")
+
+    margin_df, _ = f.process_odds(
+        bookmakers_margin,
+        ["Sportsbet", "Pointsbet", "Unibet", "Palmerbet", "Betright"],
+        table_name="NRL Margin Odds",
+        match_threshold=80,
+        outcomes=4,
+        market="Margin",
+        upsert=UPSERT_NRL,
+        upsert_keys=["Match", "Date", "Result"],
+        store_closing_odds=True,
+        closing_table_name="NRL Closing Odds",
+        store_open_odds=True,
+        open_table_name="NRL Open Odds",
+        history_market_name="Margin",
+    )
+
     # -------- NRL Tryscorers --------
     logger.info("Scraping Sportsbet NRL tryscorer data")
     sb_scraper = sb.SBSportsScraper(sb_line_total_url, chosen_date=chosen_date)
@@ -406,6 +469,7 @@ async def main():
         h2h=h2h_df,
         line=line_df,
         total=total_df,
+        margin=margin_df,
         tryscorer=tryscorer_df,
     )
 

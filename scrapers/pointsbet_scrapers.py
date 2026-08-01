@@ -9,6 +9,8 @@ from playwright_stealth           import stealth_async
 from playwright.async_api         import async_playwright
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+from scrapers.margin_utils import canonical_margin_selection, is_target_margin_market
  
 class PBSportsScraper:
     def __init__(self, url, chosen_date):
@@ -142,6 +144,60 @@ class PBSportsScraper:
                     }
                 
         return win_market
+
+    async def POINTSBET_scrape_nrl_margin(self):
+        """Scrape the NRL Margins 12.5 market as Team 1-12 / Team 13+."""
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page(user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
+            ))
+            await page.goto(self.url)
+            payload = await page.evaluate(f"() => fetch('{self.url}').then(response => response.json())")
+            if not payload:
+                logger.error("Failed to fetch PointsBet NRL margin markets")
+                await browser.close()
+                return {}
+
+            win_market = {}
+            for event in payload.get("events", []):
+                if event.get("isLive") is True:
+                    continue
+                detail = event
+                event_key = event.get("key")
+                if event_key:
+                    detail_url = f"https://api.au.pointsbet.com/api/mes/v3/events/{event_key}"
+                    try:
+                        detail = await page.evaluate(
+                            f"() => fetch('{detail_url}').then(response => response.json())"
+                        )
+                    except Exception as exc:
+                        logger.warning(f"PointsBet margin detail fetch failed for {event_key}: {exc}")
+                        detail = event
+
+                starts_at = detail.get("startsAt") or event.get("startsAt")
+                match_name = detail.get("name") or event.get("name")
+                if not starts_at or not match_name:
+                    continue
+                dt_utc = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+                brisbane_date = dt_utc.astimezone(ZoneInfo("Australia/Brisbane")).date().isoformat()
+
+                markets = (detail.get("fixedOddsMarkets") or []) + (detail.get("specialFixedOddsMarkets") or [])
+                for market in markets:
+                    parsed = {}
+                    for outcome in market.get("outcomes", []):
+                        result = canonical_margin_selection(outcome.get("name"))
+                        price = outcome.get("price")
+                        if result and price is not None:
+                            parsed[result] = price
+                    market_name = market.get("eventClass") or market.get("eventName") or market.get("name")
+                    if is_target_margin_market(market_name, list(parsed)):
+                        win_market[match_name, brisbane_date] = parsed
+                        break
+
+            await browser.close()
+            return win_market
 
     async def POINTSBET_scrape_nrl_tryscorers(self):
         """

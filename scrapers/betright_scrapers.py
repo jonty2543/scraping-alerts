@@ -11,6 +11,8 @@ from playwright.async_api         import async_playwright
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from scrapers.margin_utils import canonical_margin_selection, is_target_margin_market
+
 class BRSportsScraper:
     def __init__(self, url, chosen_date):
         """
@@ -238,6 +240,19 @@ class BRSportsScraper:
                                                 if mtch:
                                                     outcome_name = f"{outcome_name.strip()} {abs(float(mtch.group(1))):.1f}"
                                             prices_map[outcome_name] = price
+
+                                elif market_kind == 'margin':
+                                    for event in events:
+                                        event_name = event.get("eventName") or ""
+                                        parsed = {}
+                                        for outcome in event.get("outcomes", []):
+                                            result = canonical_margin_selection(outcome.get("outcomeName"))
+                                            price = outcome.get("price")
+                                            if result and price is not None:
+                                                parsed[result] = price
+                                        if is_target_margin_market(event_name, list(parsed)):
+                                            prices_map.update(parsed)
+                                            break
 
                                 if len(prices_map) >= 2:
                                     win_market[match, brisbane_date] = prices_map

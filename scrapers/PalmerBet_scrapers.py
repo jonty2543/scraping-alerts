@@ -11,6 +11,8 @@ from playwright.async_api         import async_playwright
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from scrapers.margin_utils import canonical_margin_selection, is_target_margin_market
+
 class PalmerBetSportsScraper:
     def __init__(self, url, chosen_date):
         """
@@ -326,6 +328,110 @@ class PalmerBetSportsScraper:
 
                 if prices:
                     win_market[(match, brisbane_date)] = prices
+
+            await browser.close()
+            return win_market
+
+    async def PalmerBet_scrape_nrl_margin(self, comp='Australia National Rugby League'):
+        """Scrape Palmerbet's full match-market list for 1-12 / 13+ margins."""
+        all_markets = self._requests_json(self.url, retries=3, delay=1.2)
+        if not all_markets:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page(user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
+                ))
+                try:
+                    await page.goto(self.url, wait_until="domcontentloaded")
+                    all_markets = await page.evaluate(
+                        f"() => fetch('{self.url}').then(response => response.json())"
+                    )
+                except Exception as exc:
+                    logger.warning(f"Palmerbet NRL event fetch failed: {exc}")
+                await browser.close()
+        if not all_markets:
+            logger.error("Failed to fetch Palmerbet NRL events")
+            return {}
+
+        def current_price(outcome):
+            if outcome.get("price") is not None:
+                return outcome.get("price")
+            for price in outcome.get("prices", []) or []:
+                current = (price.get("priceSnapshot") or {}).get("current")
+                if current not in (None, 0, 0.0):
+                    return current
+            return None
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page(user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
+            ))
+            win_market = {}
+
+            async def fetch_json(url):
+                direct = self._requests_json(url, retries=1, delay=0.0)
+                if direct is not None:
+                    return direct
+                try:
+                    return await page.evaluate(f"() => fetch('{url}').then(response => response.json())")
+                except Exception as exc:
+                    logger.warning(f"Palmerbet margin fetch failed for {url}: {exc}")
+                    return None
+
+            for game in all_markets.get("matches", []):
+                if game.get("status") != "NotStarted":
+                    continue
+                if comp:
+                    game_comp = str((game.get("paths") or [{}, {}, {}])[2].get("title", ""))
+                    comp_l = str(comp).lower()
+                    game_comp_l = game_comp.lower()
+                    is_nrl_alias = ("rugby league" in comp_l and game_comp_l == "nrl")
+                    if not (comp_l in game_comp_l or game_comp_l in comp_l or is_nrl_alias):
+                        continue
+
+                event_id = game.get("eventId")
+                starts_at = game.get("startTime")
+                home_name = (game.get("homeTeam") or {}).get("title")
+                away_name = (game.get("awayTeam") or {}).get("title")
+                if not event_id or not starts_at or not home_name or not away_name:
+                    continue
+
+                market_url = (
+                    "https://fixture.palmerbet.online/fixtures/sports/"
+                    f"matches/{event_id}/markets?sportType=RugbyLeague&pageSize=1000&channel=website"
+                )
+                market_payload = await fetch_json(market_url)
+                market_stubs = market_payload.get("markets", []) if isinstance(market_payload, dict) else []
+
+                for market_stub in market_stubs:
+                    market = market_stub
+                    for link in market_stub.get("_links", []) or []:
+                        href = link.get("href")
+                        if not href or link.get("method", "GET") != "GET":
+                            continue
+                        detail_url = href if href.startswith("http") else f"https://fixture.palmerbet.online{href}"
+                        if "channel=" not in detail_url:
+                            detail_url += ("&" if "?" in detail_url else "?") + "channel=website"
+                        detail_payload = await fetch_json(detail_url)
+                        if isinstance(detail_payload, dict):
+                            market = detail_payload.get("market", detail_payload)
+                        break
+
+                    parsed = {}
+                    for outcome in market.get("outcomes", []) or []:
+                        result = canonical_margin_selection(outcome.get("title") or outcome.get("name"))
+                        price = current_price(outcome)
+                        if result and price is not None:
+                            parsed[result] = price
+                    market_name = market.get("title") or market.get("type") or market_stub.get("title")
+                    if is_target_margin_market(market_name, list(parsed)):
+                        dt_utc = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+                        brisbane_date = dt_utc.astimezone(ZoneInfo("Australia/Brisbane")).date().isoformat()
+                        win_market[(f"{home_name} vs {away_name}", brisbane_date)] = parsed
+                        break
 
             await browser.close()
             return win_market

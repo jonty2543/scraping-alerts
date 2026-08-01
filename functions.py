@@ -733,6 +733,7 @@ def _infer_history_market(source_table_name: str, df: pd.DataFrame, history_mark
         "NRL Odds": "H2H",
         "NRL Line Odds": "Line",
         "NRL Total Odds": "Total",
+        "NRL Margin Odds": "Margin",
     }
     return source_market_map.get(source_table_name)
 
@@ -821,6 +822,7 @@ def write_betting_odds_snapshot(
     h2h: Optional[pd.DataFrame] = None,
     line: Optional[pd.DataFrame] = None,
     total: Optional[pd.DataFrame] = None,
+    margin: Optional[pd.DataFrame] = None,
     tryscorer: Optional[pd.DataFrame] = None,
 ):
     generated_at = datetime.now(ZoneInfo("Australia/Brisbane")).isoformat()
@@ -829,6 +831,7 @@ def write_betting_odds_snapshot(
         "h2h": _snapshot_records(h2h),
         "line": _snapshot_records(line),
         "total": _snapshot_records(total),
+        "margin": _snapshot_records(margin),
         "tryscorer": _snapshot_records(tryscorer),
         "generated_at": generated_at,
         "updated_at": generated_at,
@@ -842,7 +845,8 @@ def write_betting_odds_snapshot(
         logger.info(
             "Upserted betting odds snapshot: "
             f"h2h={len(payload['h2h'])}, line={len(payload['line'])}, "
-            f"total={len(payload['total'])}, tryscorer={len(payload['tryscorer'])}"
+            f"total={len(payload['total'])}, margin={len(payload['margin'])}, "
+            f"tryscorer={len(payload['tryscorer'])}"
         )
     except Exception as e:
         logger.error(f"Failed to upsert summary.betting_odds_snapshot: {e}")

@@ -5,6 +5,7 @@ create table if not exists summary.betting_odds_snapshot (
     h2h jsonb not null default '[]'::jsonb,
     line jsonb not null default '[]'::jsonb,
     total jsonb not null default '[]'::jsonb,
+    margin jsonb not null default '[]'::jsonb,
     tryscorer jsonb not null default '[]'::jsonb,
     generated_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
@@ -14,6 +15,7 @@ alter table summary.betting_odds_snapshot
     add column if not exists h2h jsonb not null default '[]'::jsonb,
     add column if not exists line jsonb not null default '[]'::jsonb,
     add column if not exists total jsonb not null default '[]'::jsonb,
+    add column if not exists margin jsonb not null default '[]'::jsonb,
     add column if not exists tryscorer jsonb not null default '[]'::jsonb,
     add column if not exists generated_at timestamptz not null default now(),
     add column if not exists updated_at timestamptz not null default now();
