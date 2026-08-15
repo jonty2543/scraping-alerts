@@ -734,6 +734,7 @@ def _infer_history_market(source_table_name: str, df: pd.DataFrame, history_mark
         "NRL Line Odds": "Line",
         "NRL Total Odds": "Total",
         "NRL Margin Odds": "Margin",
+        "NRL Tryscorers": "Tryscorer",
     }
     return source_market_map.get(source_table_name)
 
@@ -852,6 +853,129 @@ def write_betting_odds_snapshot(
         logger.error(f"Failed to upsert summary.betting_odds_snapshot: {e}")
         raise
 
+
+NRL_DAILY_SNAPSHOT_TABLE = "nrl_odds_snapshots"
+NRL_DAILY_SNAPSHOT_SLOTS = {"10am", "6pm"}
+
+
+def write_nrl_daily_odds_snapshot(
+    snapshot_slot: str,
+    h2h: Optional[pd.DataFrame] = None,
+    line: Optional[pd.DataFrame] = None,
+    total: Optional[pd.DataFrame] = None,
+    margin: Optional[pd.DataFrame] = None,
+    tryscorer: Optional[pd.DataFrame] = None,
+    batch_size: int = 500,
+):
+    """Store one idempotent, row-level NRL odds snapshot for a scheduled daily slot."""
+    slot = str(snapshot_slot).strip().lower()
+    if slot not in NRL_DAILY_SNAPSHOT_SLOTS:
+        raise ValueError(f"snapshot_slot must be one of {sorted(NRL_DAILY_SNAPSHOT_SLOTS)}")
+
+    captured_at = datetime.now(ZoneInfo("Australia/Brisbane"))
+    snapshot_date = captured_at.date().isoformat()
+    market_frames = [
+        (h2h, "H2H", "NRL Odds"),
+        (line, "Line", "NRL Line Odds"),
+        (total, "Total", "NRL Total Odds"),
+        (margin, "Margin", "NRL Margin Odds"),
+        (tryscorer, "Tryscorer", "NRL Tryscorers"),
+    ]
+
+    frames = []
+    for market_df, market_name, source_table in market_frames:
+        if market_df is None or not isinstance(market_df, pd.DataFrame) or market_df.empty:
+            continue
+        normalized = _normalize_market_history_rows(
+            market_df,
+            source_table_name=source_table,
+            timestamp_col="Captured At",
+            timestamp_value=captured_at.isoformat(),
+            history_market_name=market_name,
+        )
+        normalized["Snapshot Date"] = snapshot_date
+        normalized["Snapshot Slot"] = slot
+        frames.append(normalized)
+
+    if not frames:
+        logger.warning(f"Skipping {slot} NRL odds snapshot: all market dataframes are empty.")
+        return 0
+
+    snapshot_df = pd.concat(frames, ignore_index=True)
+    snapshot_df = snapshot_df.rename(columns={
+        "Snapshot Date": "snapshot_date",
+        "Snapshot Slot": "snapshot_slot",
+        "Captured At": "captured_at",
+        "Match": "match",
+        "Date": "event_date",
+        "Market": "market",
+        "Result": "result",
+        "Value": "value",
+        "Best Bookie": "best_bookie",
+        "Best Price": "best_price",
+        "Market %": "market_percent",
+        "Sportsbet": "sportsbet",
+        "Pointsbet": "pointsbet",
+        "Unibet": "unibet",
+        "Palmerbet": "palmerbet",
+        "Betright": "betright",
+        "Source Table": "source_table",
+    })
+    snapshot_columns = [
+        "snapshot_date",
+        "snapshot_slot",
+        "captured_at",
+        "match",
+        "event_date",
+        "market",
+        "result",
+        "value",
+        "best_bookie",
+        "best_price",
+        "market_percent",
+        "sportsbet",
+        "pointsbet",
+        "unibet",
+        "palmerbet",
+        "betright",
+        "source_table",
+    ]
+    for column in snapshot_columns:
+        if column not in snapshot_df.columns:
+            snapshot_df[column] = None
+
+    snapshot_df = snapshot_df[snapshot_columns].drop_duplicates(
+        subset=[
+            "snapshot_date",
+            "snapshot_slot",
+            "match",
+            "event_date",
+            "market",
+            "result",
+            "value",
+        ]
+    )
+    records = _json_safe_records(snapshot_df)
+    conflict_columns = (
+        "snapshot_date,snapshot_slot,match,event_date,market,result,value_key"
+    )
+
+    inserted = 0
+    for start in range(0, len(records), batch_size):
+        batch = records[start:start + batch_size]
+        response = supabase.table(NRL_DAILY_SNAPSHOT_TABLE).upsert(
+            batch,
+            on_conflict=conflict_columns,
+            ignore_duplicates=True,
+        ).execute()
+        inserted += len(response.data or [])
+
+    logger.info(
+        f"NRL odds snapshot {snapshot_date} {slot}: "
+        f"attempted={len(records)}, inserted={inserted}."
+    )
+    return inserted
+
 def _cleanup_recent_flucs(supabase, time_threshold, batch_size=1000):
     # Delete old flucs in batches. Prefer id-based deletes when id exists.
     try:
@@ -964,6 +1088,18 @@ def _store_closing_odds(
         return
 
     closing_rows = current_df[base_cols].merge(missing_keys, on=key_cols, how="inner")
+    if "Date" in closing_rows.columns:
+        today = datetime.now(ZoneInfo("Australia/Brisbane")).date()
+        event_dates = pd.to_datetime(closing_rows["Date"], errors="coerce").dt.date
+        eligible = event_dates.notna() & event_dates.le(today)
+        skipped_future = int((~eligible & event_dates.notna()).sum())
+        if skipped_future:
+            logger.info(
+                f"Skipped {skipped_future} future-dated rows while capturing closing odds "
+                f"for {source_table_name}."
+            )
+        closing_rows = closing_rows.loc[eligible]
+
     valid_price_cols = [col for col in price_cols if col in closing_rows.columns]
     if valid_price_cols:
         closing_rows = closing_rows.loc[

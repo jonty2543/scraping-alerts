@@ -1,8 +1,9 @@
+import argparse
 import time
 import asyncio
 import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytz
 import nest_asyncio
@@ -15,6 +16,7 @@ import scrapers.PalmerBet_scrapers as palm
 import scrapers.betright_scrapers as br
 
 import functions as f
+from backfill_nrl_tryscorer_closing_odds import archive_tryscorer_closing_odds
 
 nest_asyncio.apply()
 UPSERT_NRL = False
@@ -159,7 +161,7 @@ def _select_three_center_values(bookmakers_markets, market_kind, num_values=3, l
     return filtered, selected_values
 
 
-async def main():
+async def main(snapshot_slot=None):
     chosen_date = datetime.now(pytz.timezone("Australia/Brisbane")).date().strftime("%Y-%m-%d")
 
     pb_nrl_url = f.pb_nrl_url
@@ -465,6 +467,17 @@ async def main():
         prune_scope_keys=["Match", "Date"],
     )
 
+    archive_since = (
+        datetime.now(pytz.timezone("Australia/Brisbane")).date() - timedelta(days=7)
+    ).isoformat()
+    tryscorer_archive = archive_tryscorer_closing_odds(
+        f.supabase,
+        before_date=chosen_date,
+        since_date=archive_since,
+        apply=True,
+    )
+    logger.info(f"NRL tryscorer closing archive: {tryscorer_archive}")
+
     f.write_betting_odds_snapshot(
         h2h=h2h_df,
         line=line_df,
@@ -473,6 +486,28 @@ async def main():
         tryscorer=tryscorer_df,
     )
 
+    effective_snapshot_slot = snapshot_slot
+    if effective_snapshot_slot is None:
+        brisbane_hour = datetime.now(pytz.timezone("Australia/Brisbane")).hour
+        effective_snapshot_slot = {10: "10am", 18: "6pm"}.get(brisbane_hour)
+
+    if effective_snapshot_slot:
+        f.write_nrl_daily_odds_snapshot(
+            snapshot_slot=effective_snapshot_slot,
+            h2h=h2h_df,
+            line=line_df,
+            total=total_df,
+            margin=margin_df,
+            tryscorer=tryscorer_df,
+        )
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="Scrape current NRL odds.")
+    parser.add_argument(
+        "--snapshot-slot",
+        choices=["10am", "6pm"],
+        help="After the fresh scrape, store an idempotent scheduled odds snapshot.",
+    )
+    args = parser.parse_args()
+    asyncio.run(main(snapshot_slot=args.snapshot_slot))

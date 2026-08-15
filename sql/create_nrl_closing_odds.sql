@@ -28,10 +28,11 @@ set "Market" = case
     when "Source Table" = 'NRL Line Odds' then 'Line'
     when "Source Table" = 'NRL Total Odds' then 'Total'
     when "Source Table" = 'NRL Margin Odds' then 'Margin'
+    when "Source Table" = 'NRL Tryscorers' then 'Tryscorer'
     else "Market"
 end
 where "Market" is null
-  and "Source Table" in ('NRL Odds', 'NRL Line Odds', 'NRL Total Odds', 'NRL Margin Odds');
+  and "Source Table" in ('NRL Odds', 'NRL Line Odds', 'NRL Total Odds', 'NRL Margin Odds', 'NRL Tryscorers');
 
 create index if not exists idx_nrl_closing_odds_match_date_result
     on public."NRL Closing Odds" ("Match", "Date", "Result");
