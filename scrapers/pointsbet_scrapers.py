@@ -266,7 +266,11 @@ class PBSportsScraper:
                     if tries not in {1, 2, 3}:
                         continue
                     for outcome in market.get("outcomes", []):
-                        player = outcome.get("playerId") or outcome.get("name")
+                        # `playerId` is an opaque numeric identifier.  It must not
+                        # be used as the selection label: doing so leaves the
+                        # tryscorer table with IDs instead of player names and
+                        # prevents matching against the other bookmakers.
+                        player = outcome.get("name")
                         price = outcome.get("price")
                         if not player or price is None:
                             continue
