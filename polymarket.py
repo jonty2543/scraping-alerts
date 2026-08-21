@@ -16,7 +16,7 @@ SESSION.headers.update({
 })
 
 
-def _get(url: str, params: dict | None = None, retries: int = 3, backoff: float = 0.8):
+def _get(url: str, params: Optional[dict] = None, retries: int = 3, backoff: float = 0.8):
     """Generic GET with retry."""
     for i in range(retries):
         r = SESSION.get(url, params=params, timeout=20)

@@ -232,6 +232,63 @@ def normalize_players_match(match: str) -> str:
     
     return ' v '.join(normalized_sides)
 
+
+def _valid_decimal_price(value):
+    try:
+        return pd.notna(value) and float(value) > 1
+    except (TypeError, ValueError):
+        return False
+
+
+def _recompute_best_price_columns(df: pd.DataFrame, price_cols: list) -> pd.DataFrame:
+    df = df.copy()
+    valid_cols = [col for col in price_cols if col in df.columns]
+
+    def best_for_row(row):
+        valid_prices = []
+        for col in valid_cols:
+            if _valid_decimal_price(row.get(col)):
+                valid_prices.append((col, float(row.get(col))))
+        if not valid_prices:
+            return pd.Series({"Best Bookie": "", "Best Price": 0.0})
+        best_price = max(price for _, price in valid_prices)
+        best_bookies = [bookie for bookie, price in valid_prices if price == best_price]
+        return pd.Series({"Best Bookie": ", ".join(best_bookies), "Best Price": best_price})
+
+    if df.empty:
+        df["Best Bookie"] = []
+        df["Best Price"] = []
+        return df
+
+    best_cols = df.apply(best_for_row, axis=1)
+    df["Best Bookie"] = best_cols["Best Bookie"]
+    df["Best Price"] = best_cols["Best Price"]
+    return df
+
+
+def _sanitize_tryscorer_rows(df: pd.DataFrame, price_cols: list) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    df = df.copy()
+    valid_cols = [col for col in price_cols if col in df.columns]
+    for col in valid_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+        df.loc[~df[col].apply(_valid_decimal_price), col] = 0.0
+
+    value_numeric = pd.to_numeric(df.get("Value"), errors="coerce")
+    valid_value = value_numeric.notna() & value_numeric.eq(value_numeric.round()) & value_numeric.isin([1, 2, 3])
+    valid_result = df.get("Result", pd.Series(dtype=object)).astype(str).str.contains(r"[A-Za-z]", regex=True, na=False)
+    valid_odds = df[valid_cols].apply(lambda row: any(_valid_decimal_price(v) for v in row), axis=1) if valid_cols else False
+
+    before = len(df)
+    df = df.loc[valid_result & valid_value & valid_odds].copy()
+    if before != len(df):
+        logger.warning(f"Dropped {before - len(df)} invalid NRL tryscorer row(s) before DB write.")
+
+    df["Value"] = value_numeric.loc[df.index].astype(int)
+    return _recompute_best_price_columns(df, valid_cols)
+
 def fuzzy_merge_prices(dfs, bookie_names, outcomes=3, match_threshold=80, result_threshold=70, names=False):
     """
     Fuzzy merge bookmaker DataFrames by (match, date, result).
@@ -526,7 +583,7 @@ def arb_alert(arbs, test=False, extra_webhooks=None):
         primary_sent = False
         for idx, webhook in enumerate(webhooks):
             try:
-                response = requests.post(webhook, json={"content": message})
+                response = requests.post(webhook, json={"content": message}, timeout=10)
                 response.raise_for_status()
                 if idx == 0:
                     primary_sent = True
@@ -591,7 +648,7 @@ def prob_alert(df, diff_lim, test=False):
                        f"{details}")
 
             try:
-                response = requests.post(webhook, json={"content": message})
+                response = requests.post(webhook, json={"content": message}, timeout=10)
                 response.raise_for_status()    
                 
                 if not test:
@@ -1375,8 +1432,15 @@ def process_odds(
         return None, None
 
     active_price_cols = valid_price_cols
+    write_price_cols = [name for name in price_cols if name != "Model"]
     dfs_list = [dfs[name] for name in active_price_cols]
+    inactive_price_cols = [name for name in write_price_cols if name not in active_price_cols]
     logger.info(f"Including {len(active_price_cols)} valid bookmakers: {active_price_cols}")
+    if inactive_price_cols:
+        logger.warning(
+            f"No current {table_name} markets for {inactive_price_cols}; "
+            "writing 0.0 to clear stale bookmaker prices."
+        )
 
     logger.info(f"Merging {table_name} dfs")
     merged_df, mkt_percents = fuzzy_merge_prices(
@@ -1428,6 +1492,9 @@ def process_odds(
     cleaned_df = merged_df.fillna(0.0)
     df_mapped = cleaned_df.rename(columns=col_map)
     df_mapped = df_mapped[[col for col in df_mapped.columns if col in col_map.values()]]
+    for col in write_price_cols:
+        if col not in df_mapped.columns:
+            df_mapped[col] = 0.0
     if market is not None:
         df_mapped["Market"] = market
     if include_value:
@@ -1442,18 +1509,11 @@ def process_odds(
         lambda x: ", ".join(x) if isinstance(x, list) else str(x)
     )
     df_mapped["Market %"] = df_mapped["Market %"].round(4)
+    if market and str(market).lower() == "tryscorer":
+        df_mapped = _sanitize_tryscorer_rows(df_mapped, write_price_cols)
+    else:
+        df_mapped = _recompute_best_price_columns(df_mapped, write_price_cols)
 
-    # Fetch current table for fluc comparison
-    current_table = supabase.table(table_name).select("*").execute()
-    current_df = pd.DataFrame(current_table.data)
-
-    required_current_cols = ['Match', 'Date', 'Result'] + active_price_cols
-    if include_value:
-        required_current_cols.append("Value")
-    for col in required_current_cols:
-        if col not in current_df.columns:
-            current_df[col] = None
-            
     dedupe_keys = ["Match", "Date", "Result"]
     if upsert_keys:
         dedupe_keys = [k for k in upsert_keys if k in df_mapped.columns]
@@ -1469,7 +1529,7 @@ def process_odds(
 
     if dedupe_keys:
         # Prefer rows with broader bookmaker coverage, then stronger market quality.
-        df_mapped["_coverage"] = df_mapped[active_price_cols].apply(
+        df_mapped["_coverage"] = df_mapped[write_price_cols].apply(
             lambda row: sum((pd.notna(v) and float(v) > 0) for v in row),
             axis=1
         )
@@ -1481,6 +1541,17 @@ def process_odds(
             .reset_index(drop=True)
         )
 
+    # Fetch current table for fluc comparison
+    current_table = supabase.table(table_name).select("*").execute()
+    current_df = pd.DataFrame(current_table.data)
+
+    required_current_cols = ['Match', 'Date', 'Result'] + write_price_cols
+    if include_value:
+        required_current_cols.append("Value")
+    for col in required_current_cols:
+        if col not in current_df.columns:
+            current_df[col] = None
+
     # Convert to dict records for table insert
     df_mapped = make_json_safe(df_mapped)
     records = df_mapped.to_dict(orient="records")
@@ -1491,7 +1562,7 @@ def process_odds(
             current_df=current_df,
             latest_df=df_mapped,
             key_cols=dedupe_keys,
-            price_cols=active_price_cols,
+            price_cols=write_price_cols,
             source_table_name=table_name,
             closing_table_name=closing_table_name,
             history_market_name=history_market_name,
@@ -1501,7 +1572,7 @@ def process_odds(
         _store_open_odds(
             supabase=supabase,
             latest_df=df_mapped,
-            price_cols=active_price_cols,
+            price_cols=write_price_cols,
             source_table_name=table_name,
             open_table_name=open_table_name,
             history_market_name=history_market_name,
@@ -1515,8 +1586,8 @@ def process_odds(
         fluc_keys.append("Value")
 
     flucs = pd.merge(
-        df_mapped[fluc_keys + active_price_cols],
-        current_df[fluc_keys + active_price_cols],
+        df_mapped[fluc_keys + write_price_cols],
+        current_df[fluc_keys + write_price_cols],
         on=fluc_keys,
         suffixes=('_new', '_old'),
         how='outer'
@@ -1524,7 +1595,7 @@ def process_odds(
 
     new_prices = flucs.melt(
         id_vars=fluc_keys,
-        value_vars=[f"{c}_new" for c in active_price_cols],
+        value_vars=[f"{c}_new" for c in write_price_cols],
         var_name='Bookie',
         value_name='New Price'
     )
@@ -1532,7 +1603,7 @@ def process_odds(
 
     old_prices = flucs.melt(
         id_vars=fluc_keys,
-        value_vars=[f"{c}_old" for c in active_price_cols],
+        value_vars=[f"{c}_old" for c in write_price_cols],
         var_name='Bookie',
         value_name='Old Price'
     )
@@ -1655,9 +1726,9 @@ def process_odds(
                 supabase.table(table_name).insert(records).execute()
             except Exception as e:
                 msg = str(e)
-                if include_value and "duplicate key value violates unique constraint" in msg:
+                if "duplicate key value violates unique constraint" in msg:
                     logger.warning(
-                        f"{table_name} unique key does not currently allow multiple values per team. "
+                        f"{table_name} insert hit a duplicate unique key. "
                         "Falling back to one row per Match/Date/Result."
                     )
                     fallback_df = df_mapped.copy()
@@ -2016,7 +2087,7 @@ def match_searcher(df, match):
     
 #Polymarket functions
 
-def _get(url: str, params: dict | None = None, retries: int = 3, backoff: float = 0.8):
+def _get(url: str, params: Optional[dict] = None, retries: int = 3, backoff: float = 0.8):
     """Generic GET with retry."""
     for i in range(retries):
         r = SESSION.get(url, params=params, timeout=20)

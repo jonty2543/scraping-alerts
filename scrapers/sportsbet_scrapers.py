@@ -271,6 +271,12 @@ class SBSportsScraper:
         self.chosen_date = chosen_date
         # self.jurisdiction = self.map_jurisdiction(jurisdiction)
 
+    def _competition_matches(self, event, competition_id):
+        if competition_id == 'none' or competition_id is None:
+            return True
+        actual_id = event.get("competitionId") if "competitionId" in event else event.get("id")
+        return str(actual_id) == str(competition_id)
+
     def _requests_json(self, url, retries=3, delay=1.0):
         headers = {
             "User-Agent": (
@@ -279,11 +285,16 @@ class SBSportsScraper:
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
             "Accept": "application/json",
+            "Cache-Control": "no-cache, no-store, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
         }
         last_err = None
         for attempt in range(retries):
             try:
-                resp = requests.get(url, headers=headers, timeout=20)
+                sep = "&" if "?" in url else "?"
+                request_url = f"{url}{sep}_={int(time.time() * 1000)}"
+                resp = requests.get(request_url, headers=headers, timeout=20)
                 if resp.status_code == 200:
                     return resp.json()
                 last_err = f"HTTP {resp.status_code}"
@@ -325,7 +336,7 @@ class SBSportsScraper:
             if market.get("hasBIRStarted") == 'true':
                 continue
 
-            if competition_id != 'none' and market.get("competitionId") != competition_id:
+            if not self._competition_matches(market, competition_id):
                 continue
 
             if market_type is not None and market.get('primaryMarket', {}).get('name') != market_type:
@@ -365,11 +376,18 @@ class SBSportsScraper:
 
     async def SPORTSBET_scraper_lines_totals(self, market_kind='line', competition_id='none'):
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
-            page = await browser.new_page(user_agent=ua)
+            browser = None
+            page = None
+            try:
+                browser = await p.chromium.launch(headless=True)
+                ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
+                page = await browser.new_page(user_agent=ua)
+            except Exception as e:
+                logger.warning(f"Sportsbet Playwright launch failed; using direct HTTP requests only: {e}")
 
             async def goto_with_retry(url, retries=3, delay=1.5):
+                if page is None:
+                    return False
                 last_err = None
                 for attempt in range(retries):
                     try:
@@ -389,6 +407,8 @@ class SBSportsScraper:
                         direct = self._requests_json(url, retries=1, delay=0.0)
                         if direct is not None:
                             return direct
+                        if page is None:
+                            return default
                         return await page.evaluate(f"() => fetch('{url}').then(r => r.json())")
                     except Exception as e:
                         last_err = e
@@ -404,7 +424,8 @@ class SBSportsScraper:
             all_events = await fetch_json(self.url, default=[])
             if not all_events:
                 logger.error("Failed to fetch markets")
-                await browser.close()
+                if browser is not None:
+                    await browser.close()
                 return {}
 
             # Build canonical event list from the H2H-style events feed so we get every match id.
@@ -440,7 +461,7 @@ class SBSportsScraper:
                 if event.get("hasBIRStarted") is True or str(event.get("hasBIRStarted")).lower() == 'true':
                     continue
 
-                if competition_id != 'none' and str(event.get("competitionId")) != str(competition_id):
+                if not self._competition_matches(event, competition_id):
                     continue
 
                 event_sort = str(event.get("eventSort", "")).upper()
@@ -647,6 +668,12 @@ class SBSportsScraper:
                     for market in direct_markets:
                         maybe_collect_market(market)
 
+                required_prices = 4 if market_kind == 'margin' else 2
+                if len(event_prices) >= required_prices:
+                    event_name = event.get("displayName") or event.get("name")
+                    win_market[event_name, brisbane_date] = event_prices
+                    continue
+
                 # Fallback: query detailed market groupings per event
                 groupings_url = f"https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/Events/{event_id}/MarketGroupings"
                 groupings = await fetch_json(groupings_url, default=[])
@@ -714,14 +741,20 @@ class SBSportsScraper:
                     event_name = event.get("displayName") or event.get("name")
                     win_market[event_name, brisbane_date] = event_prices
 
-            await browser.close()
+            if browser is not None:
+                await browser.close()
             return win_market
 
     async def SPORTSBET_scraper_tryscorers(self, competition_id='none'):
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
-            page = await browser.new_page(user_agent=ua)
+            browser = None
+            page = None
+            try:
+                browser = await p.chromium.launch(headless=True)
+                ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.1938.81"
+                page = await browser.new_page(user_agent=ua)
+            except Exception as e:
+                logger.warning(f"Sportsbet Playwright launch failed; using direct HTTP requests only: {e}")
 
             async def fetch_json(url, default=None, retries=3, delay=1.0):
                 last_err = None
@@ -730,6 +763,8 @@ class SBSportsScraper:
                         direct = self._requests_json(url, retries=1, delay=0.0)
                         if direct is not None:
                             return direct
+                        if page is None:
+                            return default
                         return await page.evaluate(f"() => fetch('{url}').then(r => r.json())")
                     except Exception as e:
                         last_err = e
@@ -739,14 +774,16 @@ class SBSportsScraper:
                 return default
 
             try:
-                await page.goto(self.url, wait_until="domcontentloaded")
+                if page is not None:
+                    await page.goto(self.url, wait_until="domcontentloaded")
             except Exception:
                 logger.warning("Sportsbet page navigation failed; continuing with direct HTTP requests.")
 
             all_events = await fetch_json(self.url, default=[])
             if not all_events:
                 logger.error("Failed to fetch Sportsbet markets")
-                await browser.close()
+                if browser is not None:
+                    await browser.close()
                 return {}
 
             def iter_markets(node):
@@ -790,7 +827,7 @@ class SBSportsScraper:
             for event in all_events if isinstance(all_events, list) else []:
                 if event.get("hasBIRStarted") is True or str(event.get("hasBIRStarted")).lower() == 'true':
                     continue
-                if competition_id != 'none' and str(event.get("competitionId")) != str(competition_id):
+                if not self._competition_matches(event, competition_id):
                     continue
                 if str(event.get("eventSort", "")).upper() not in {"", "MTCH"}:
                     continue
@@ -849,7 +886,8 @@ class SBSportsScraper:
                 if prices:
                     win_market[(event_name, brisbane_date)] = prices
 
-            await browser.close()
+            if browser is not None:
+                await browser.close()
             return win_market
     
 
@@ -879,9 +917,8 @@ class SBSportsScraper:
                 if market.get("hasBIRStarted") == 'true':
                     continue
                 
-                if competition_id != 'none':
-                    if market.get("competitionId") != competition_id:
-                        continue
+                if not self._competition_matches(market, competition_id):
+                    continue
                     
                 if market.get("eventSort") != 'MTCH':
                     continue
@@ -944,9 +981,8 @@ class SBSportsScraper:
                     continue
     
                 # Filter by competition if needed
-                if competition_id != 'none':
-                    if event.get("competitionId") != competition_id:
-                        continue
+                if not self._competition_matches(event, competition_id):
+                    continue
     
                 if event.get("eventSort") != "MTCH":
                     continue
@@ -1006,9 +1042,8 @@ class SBSportsScraper:
                 
             for comp in all_comps:
                 
-                if competition_id != 'none':
-                    if comp.get("id") != competition_id:
-                        continue
+                if not self._competition_matches(comp, competition_id):
+                    continue
                     
                 for event in comp.get("events"):
                     
