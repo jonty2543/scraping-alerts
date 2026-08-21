@@ -461,10 +461,8 @@ async def main(snapshot_slot=None):
         market="Tryscorer",
         include_value=True,
         min_mkt_percent=0,
-        upsert=True,
+        upsert=False,
         upsert_keys=["Match", "Date", "Result", "Value"],
-        prune_stale_upsert=True,
-        prune_scope_keys=["Match", "Date"],
     )
 
     archive_since = (
