@@ -61,6 +61,7 @@ one_month = (datetime.now(pytz.timezone("Australia/Brisbane")) + timedelta(60)).
 
 pb_union_url = f'https://api.au.pointsbet.com/api/mes/v3/events/featured/competition/15797?page=1'
 pb_nrl_url = f'https://api.au.pointsbet.com/api/mes/v3/events/featured/competition/7593?page=1'
+pb_rlwc_url = f'https://api.au.pointsbet.com/api/mes/v3/events/featured/competition/93765?page=1'
 
 palm_union_url = f'https://fixture.palmerbet.online/fixtures/sports/5bfcf787-edfc-48f4-b328-1d221aa07ae0/matches?sportType=rugbyunion&pageSize=1000&channel=website'
 palm_tennis_url = f'https://fixture.palmerbet.online/fixtures/sports/9d6bbedd-0b09-4031-9884-e264499a2aa5/matches?sportType=tennis&pageSize=1000&channel=website'

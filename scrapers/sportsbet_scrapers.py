@@ -277,6 +277,19 @@ class SBSportsScraper:
         actual_id = event.get("competitionId") if "competitionId" in event else event.get("id")
         return str(actual_id) == str(competition_id)
 
+    def _events_from_feed(self, feed):
+        if not isinstance(feed, list):
+            return []
+
+        events = []
+        for item in feed:
+            nested_events = item.get("events") if isinstance(item, dict) else None
+            if isinstance(nested_events, list):
+                events.extend(nested_events)
+            elif isinstance(item, dict):
+                events.append(item)
+        return events
+
     def _requests_json(self, url, retries=3, delay=1.0):
         headers = {
             "User-Agent": (
@@ -332,7 +345,7 @@ class SBSportsScraper:
 
         win_market = {}
 
-        for market in all_markets:
+        for market in self._events_from_feed(all_markets):
             if market.get("hasBIRStarted") == 'true':
                 continue
 
@@ -434,16 +447,14 @@ class SBSportsScraper:
             event_by_id = {}
 
             for src in [all_events, events_from_primary]:
-                if not isinstance(src, list):
-                    continue
-                for ev in src:
+                for ev in self._events_from_feed(src):
                     ev_id = ev.get("id") or ev.get("eventId")
                     if ev_id is not None:
                         event_by_id[str(ev_id)] = ev
 
             events_to_process = list(event_by_id.values())
-            if not events_to_process and isinstance(all_events, list):
-                events_to_process = all_events
+            if not events_to_process:
+                events_to_process = self._events_from_feed(all_events)
 
             win_market = {}
 
@@ -824,7 +835,7 @@ class SBSportsScraper:
                     prices[f"{player} {tries}+"] = price
 
             win_market = {}
-            for event in all_events if isinstance(all_events, list) else []:
+            for event in self._events_from_feed(all_events):
                 if event.get("hasBIRStarted") is True or str(event.get("hasBIRStarted")).lower() == 'true':
                     continue
                 if not self._competition_matches(event, competition_id):

@@ -185,34 +185,52 @@ class BRSportsScraper:
 
                                 elif market_kind == 'line':
                                     for event in events:
-                                        if str(event.get("eventName", "")).lower() != "match result":
+                                        event_name_l = str(event.get("eventName", "")).lower()
+                                        if event_name_l != "match result" and not event_name_l.startswith("match handicap"):
                                             continue
                                         # Anchor each team's "natural" handicap direction from the core handicap market.
                                         base_sign_by_team = {}
                                         for outcome in event.get("outcomes", []):
                                             header = str(outcome.get("groupByHeader", "")).lower()
                                             code = str(outcome.get("marketTypeCode", "")).upper()
-                                            if header != "handicap" and code not in {"HCWEST", "HCAU"}:
-                                                continue
                                             outcome_name = outcome.get("outcomeName")
-                                            points = outcome.get("points")
-                                            if not outcome_name or points in (None, 0, 0.0):
+                                            parsed_points = points = outcome.get("points")
+                                            if parsed_points in (None, 0, 0.0):
+                                                mtch = re.search(r'([+-]\d+(?:\.\d+)?)', str(outcome_name or ""))
+                                                if mtch:
+                                                    parsed_points = float(mtch.group(1))
+                                            if (
+                                                header != "handicap"
+                                                and code not in {"HCWEST", "HCAU"}
+                                                and "handicap" not in event_name_l
+                                            ):
                                                 continue
-                                            sign = 1 if float(points) > 0 else -1
+                                            if not outcome_name or parsed_points in (None, 0, 0.0):
+                                                continue
+                                            sign = 1 if float(parsed_points) > 0 else -1
                                             base_sign_by_team[outcome_name] = sign
 
                                         for outcome in event.get("outcomes", []):
                                             points = outcome.get("points")
+                                            outcome_name = outcome.get("outcomeName")
+                                            if points in (None, 0, 0.0):
+                                                mtch = re.search(r'([+-]\d+(?:\.\d+)?)', str(outcome_name or ""))
+                                                if mtch:
+                                                    points = float(mtch.group(1))
                                             if points in (None, 0, 0.0):
                                                 continue
                                             header = str(outcome.get("groupByHeader", "")).lower()
                                             code = str(outcome.get("marketTypeCode", "")).upper()
-                                            if header != "handicap" and code not in {"HCWEST", "HCAU"}:
+                                            if (
+                                                header != "handicap"
+                                                and code not in {"HCWEST", "HCAU"}
+                                                and "handicap" not in event_name_l
+                                            ):
                                                 continue
-                                            outcome_name = outcome.get("outcomeName")
                                             price = outcome.get("price")
                                             if not outcome_name or price is None:
                                                 continue
+                                            outcome_name = re.sub(r'\s+[+-]\d+(?:\.\d+)?\s*$', '', str(outcome_name)).strip()
                                             sign = 1 if float(points) > 0 else -1
                                             if outcome_name in base_sign_by_team and sign != base_sign_by_team[outcome_name]:
                                                 continue
