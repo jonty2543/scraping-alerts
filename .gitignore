@@ -1,1 +1,5 @@
 .env
+.env.local
+.venv/
+/nba_props.json
+/nba_props_upload.json

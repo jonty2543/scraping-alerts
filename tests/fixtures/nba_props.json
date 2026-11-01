@@ -1,0 +1,1315 @@
+{
+  "sportsbet": [
+    {
+      "id": 258452545,
+      "name": "Total Points",
+      "statusCode": "A",
+      "selections": [
+        {
+          "id": 1278603335,
+          "name": "Over",
+          "unformattedHandicap": "232.5",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 1.95,
+            "winPriceNum": 950,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258452545/Selections/1278603335/Prices/L"
+          }
+        },
+        {
+          "id": 1278603337,
+          "name": "Under",
+          "unformattedHandicap": "232.5",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 1.86,
+            "winPriceNum": 860,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258452545/Selections/1278603337/Prices/L"
+          }
+        }
+      ]
+    },
+    {
+      "id": 258476889,
+      "name": "Method of First Basket",
+      "statusCode": "A",
+      "selections": [
+        {
+          "id": 1278726403,
+          "name": "Ace Bailey - Dunk",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 36,
+            "winPriceNum": 35000,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258476889/Selections/1278726403/Prices/L"
+          }
+        },
+        {
+          "id": 1278726414,
+          "name": "Ace Bailey - Free Throw",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 151,
+            "winPriceNum": 150000,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258476889/Selections/1278726414/Prices/L"
+          }
+        }
+      ]
+    },
+    {
+      "id": 258476995,
+      "name": "Player to Score 3+ Points in the First 3 Minutes",
+      "statusCode": "A",
+      "selections": [
+        {
+          "id": 1278727082,
+          "name": "Lauri Markkanen",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 2.5,
+            "winPriceNum": 1500,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258476995/Selections/1278727082/Prices/L"
+          }
+        },
+        {
+          "id": 1278727090,
+          "name": "Deni Avdija",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 2.8,
+            "winPriceNum": 1800,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258476995/Selections/1278727090/Prices/L"
+          }
+        }
+      ]
+    },
+    {
+      "id": 258477035,
+      "name": "Player to Score 5+ Points in the First 3 Minutes",
+      "statusCode": "A",
+      "selections": [
+        {
+          "id": 1278727266,
+          "name": "Lauri Markkanen",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 6,
+            "winPriceNum": 5000,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258477035/Selections/1278727266/Prices/L"
+          }
+        },
+        {
+          "id": 1278727265,
+          "name": "Deni Avdija",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 6.5,
+            "winPriceNum": 5500,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258477035/Selections/1278727265/Prices/L"
+          }
+        }
+      ]
+    },
+    {
+      "id": 258477039,
+      "name": "Player to Score in the First 3 Minutes",
+      "statusCode": "A",
+      "selections": [
+        {
+          "id": 1278727284,
+          "name": "Deni Avdija",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 1.45,
+            "winPriceNum": 450,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258477039/Selections/1278727284/Prices/L"
+          }
+        },
+        {
+          "id": 1278727279,
+          "name": "Lauri Markkanen",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 1.5,
+            "winPriceNum": 500,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258477039/Selections/1278727279/Prices/L"
+          }
+        }
+      ]
+    },
+    {
+      "id": 258454584,
+      "name": "First Basket",
+      "statusCode": "A",
+      "selections": [
+        {
+          "id": 1278614676,
+          "name": "Damian Lillard",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 7.75,
+            "winPriceNum": 6750,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258454584/Selections/1278614676/Prices/L"
+          }
+        },
+        {
+          "id": 1278614677,
+          "name": "Deni Avdija",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 7.5,
+            "winPriceNum": 6500,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258454584/Selections/1278614677/Prices/L"
+          }
+        }
+      ]
+    },
+    {
+      "id": 258467813,
+      "name": "Ace Bailey - Points",
+      "statusCode": "A",
+      "selections": [
+        {
+          "id": 1278681474,
+          "name": "Ace Bailey Over",
+          "unformattedHandicap": "15.5",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 2,
+            "winPriceNum": 1000,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258467813/Selections/1278681474/Prices/L"
+          }
+        },
+        {
+          "id": 1278681475,
+          "name": "Ace Bailey Under",
+          "unformattedHandicap": "15.5",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 1.78,
+            "winPriceNum": 780,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258467813/Selections/1278681475/Prices/L"
+          }
+        }
+      ]
+    },
+    {
+      "id": 258455845,
+      "name": "To Record A Double Double",
+      "statusCode": "A",
+      "selections": [
+        {
+          "id": 1278620733,
+          "name": "Deni Avdija",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 2.33,
+            "winPriceNum": 1330,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258455845/Selections/1278620733/Prices/L"
+          }
+        },
+        {
+          "id": 1278620734,
+          "name": "Donovan Clingan",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 2,
+            "winPriceNum": 1000,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258455845/Selections/1278620734/Prices/L"
+          }
+        }
+      ]
+    },
+    {
+      "id": 258455869,
+      "name": "To Score 20+ Points",
+      "statusCode": "A",
+      "selections": [
+        {
+          "id": 1278620828,
+          "name": "Damian Lillard",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 1.38,
+            "winPriceNum": 380,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258455869/Selections/1278620828/Prices/L"
+          }
+        },
+        {
+          "id": 1278620829,
+          "name": "Deni Avdija",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 1.28,
+            "winPriceNum": 280,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258455869/Selections/1278620829/Prices/L"
+          }
+        }
+      ]
+    },
+    {
+      "id": 258455910,
+      "name": "To Record A Triple Double",
+      "statusCode": "A",
+      "selections": [
+        {
+          "id": 1278621027,
+          "name": "Deni Avdija",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 8.5,
+            "winPriceNum": 7500,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258455910/Selections/1278621027/Prices/L"
+          }
+        }
+      ]
+    },
+    {
+      "id": 258467815,
+      "name": "Ace Bailey - Made Threes",
+      "statusCode": "A",
+      "selections": [
+        {
+          "id": 1278681518,
+          "name": "Ace Bailey Over",
+          "unformattedHandicap": "1.5",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 1.52,
+            "winPriceNum": 520,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258467815/Selections/1278681518/Prices/L"
+          }
+        },
+        {
+          "id": 1278681519,
+          "name": "Ace Bailey Under",
+          "unformattedHandicap": "1.5",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 2.4,
+            "winPriceNum": 1400,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258467815/Selections/1278681519/Prices/L"
+          }
+        }
+      ]
+    },
+    {
+      "id": 258467820,
+      "name": "Ace Bailey - Rebounds",
+      "statusCode": "A",
+      "selections": [
+        {
+          "id": 1278681557,
+          "name": "Ace Bailey Over",
+          "unformattedHandicap": "5.5",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 1.64,
+            "winPriceNum": 640,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258467820/Selections/1278681557/Prices/L"
+          }
+        },
+        {
+          "id": 1278681558,
+          "name": "Ace Bailey Under",
+          "unformattedHandicap": "5.5",
+          "statusCode": "A",
+          "price": {
+            "winPrice": 2.15,
+            "winPriceNum": 1150,
+            "winPriceDen": 1000,
+            "priceCode": "L",
+            "topicLink": "Sportsbet/Sportsbook/Sports/16/Competitions/6927/Events/11110582/Markets/258467820/Selections/1278681558/Prices/L"
+          }
+        }
+      ]
+    }
+  ],
+  "pointsbet": [
+    {
+      "key": "118346345",
+      "name": "Q1 12:00 - 08:01 Total Points (Portland Trail Blazers @ Utah Jazz)",
+      "eventName": "Q1 12:00 - 08:01 Total Points",
+      "outcomes": [
+        {
+          "key": "1",
+          "name": "Over 20.5",
+          "price": 2.5,
+          "points": 20.5,
+          "isOpenForBetting": true,
+          "isHidden": false
+        },
+        {
+          "key": "2",
+          "name": "Under 20.5",
+          "price": 1.5,
+          "points": 20.5,
+          "isOpenForBetting": true,
+          "isHidden": false
+        }
+      ]
+    },
+    {
+      "key": "118262386",
+      "name": "Total Points Bands (Portland Trail Blazers @ Utah Jazz)",
+      "eventName": "Total Points Bands",
+      "outcomes": [
+        {
+          "key": "1",
+          "name": "<180.5",
+          "price": 301.0,
+          "points": 180.5,
+          "isOpenForBetting": true,
+          "isHidden": false
+        },
+        {
+          "key": "2",
+          "name": "181-190",
+          "price": 61.0,
+          "points": 0.0,
+          "isOpenForBetting": true,
+          "isHidden": false
+        }
+      ]
+    },
+    {
+      "key": "118331815",
+      "name": "Player Points Over/Under (Portland Trail Blazers @ Utah Jazz)",
+      "eventName": "Player Points Over/Under",
+      "outcomes": [
+        {
+          "key": "69",
+          "name": "Ace Bailey Over 15.5",
+          "price": 1.87,
+          "points": 15.5,
+          "isOpenForBetting": true,
+          "isHidden": false
+        },
+        {
+          "key": "70",
+          "name": "Ace Bailey Under 15.5",
+          "price": 1.87,
+          "points": 15.5,
+          "isOpenForBetting": true,
+          "isHidden": false
+        }
+      ]
+    },
+    {
+      "key": "118335890",
+      "name": "Alternate Threes (Portland Trail Blazers @ Utah Jazz)",
+      "eventName": "Alternate Threes",
+      "outcomes": [
+        {
+          "key": "109",
+          "name": "Ace Bailey To Get 1+ Three Pointers",
+          "price": 1.11,
+          "points": 0.5,
+          "isOpenForBetting": true,
+          "isHidden": false
+        },
+        {
+          "key": "110",
+          "name": "Ace Bailey To Get 2+ Three Pointers",
+          "price": 1.5,
+          "points": 1.5,
+          "isOpenForBetting": true,
+          "isHidden": false
+        }
+      ]
+    },
+    {
+      "key": "118331811",
+      "name": "Player To Record A Double Double (Portland Trail Blazers @ Utah Jazz)",
+      "eventName": "Player To Record A Double Double",
+      "outcomes": [
+        {
+          "key": "6",
+          "name": "Donovan Clingan",
+          "price": 1.9,
+          "points": 0.0,
+          "isOpenForBetting": true,
+          "isHidden": false
+        },
+        {
+          "key": "1",
+          "name": "Deni Avdija",
+          "price": 2.55,
+          "points": 0.0,
+          "isOpenForBetting": true,
+          "isHidden": false
+        }
+      ]
+    },
+    {
+      "key": "118331812",
+      "name": "Player To Record A Triple Double (Portland Trail Blazers @ Utah Jazz)",
+      "eventName": "Player To Record A Triple Double",
+      "outcomes": [
+        {
+          "key": "1",
+          "name": "Deni Avdija",
+          "price": 13.0,
+          "points": 0.0,
+          "isOpenForBetting": true,
+          "isHidden": false
+        }
+      ]
+    },
+    {
+      "key": "118331813",
+      "name": "Player To Record A Double Double And Team To Win (Portland Trail Blazers @ Utah Jazz)",
+      "eventName": "Player To Record A Double Double And Team To Win",
+      "outcomes": [
+        {
+          "key": "2",
+          "name": "Damian Lillard & Portland Trail Blazers",
+          "price": 11.0,
+          "points": 0.0,
+          "isOpenForBetting": true,
+          "isHidden": false
+        },
+        {
+          "key": "1",
+          "name": "Deni Avdija & Portland Trail Blazers",
+          "price": 3.3,
+          "points": 0.0,
+          "isOpenForBetting": true,
+          "isHidden": false
+        }
+      ]
+    },
+    {
+      "key": "118331814",
+      "name": "Player To Record A Triple Double And Team To Win (Portland Trail Blazers @ Utah Jazz)",
+      "eventName": "Player To Record A Triple Double And Team To Win",
+      "outcomes": [
+        {
+          "key": "1",
+          "name": "Deni Avdija & Portland Trail Blazers",
+          "price": 17.0,
+          "points": 0.0,
+          "isOpenForBetting": true,
+          "isHidden": false
+        }
+      ]
+    },
+    {
+      "key": "118331810",
+      "name": "Player To Score First Basket (Portland Trail Blazers @ Utah Jazz)",
+      "eventName": "Player To Score First Basket",
+      "outcomes": [
+        {
+          "key": "1",
+          "name": "Lauri Markkanen",
+          "price": 6.5,
+          "points": 0.0,
+          "isOpenForBetting": true,
+          "isHidden": false
+        },
+        {
+          "key": "2",
+          "name": "Jaxson Hayes",
+          "price": 11.0,
+          "points": 0.0,
+          "isOpenForBetting": true,
+          "isHidden": false
+        }
+      ]
+    }
+  ],
+  "betright": [
+    {
+      "eventId": 64776507,
+      "eventName": "Total Points",
+      "outcomes": [
+        {
+          "outcomeId": 1,
+          "outcomeName": "Over 231.5",
+          "price": 1.9,
+          "points": 0.0
+        },
+        {
+          "outcomeId": 2,
+          "outcomeName": "Under 231.5",
+          "price": 1.9,
+          "points": 0.0
+        }
+      ]
+    },
+    {
+      "eventId": 64771564,
+      "eventName": "Utah Jazz Total Points Over/Under 113.5",
+      "outcomes": [
+        {
+          "outcomeId": 1,
+          "outcomeName": "Over 113.5",
+          "price": 1.91,
+          "points": 0.0
+        },
+        {
+          "outcomeId": 2,
+          "outcomeName": "Under 113.5",
+          "price": 1.83,
+          "points": 0.0
+        }
+      ]
+    },
+    {
+      "eventId": 64771565,
+      "eventName": "Utah Jazz Total Points Over/Under 114.5",
+      "outcomes": [
+        {
+          "outcomeId": 1,
+          "outcomeName": "Over 114.5",
+          "price": 2.04,
+          "points": 0.0
+        },
+        {
+          "outcomeId": 2,
+          "outcomeName": "Under 114.5",
+          "price": 1.73,
+          "points": 0.0
+        }
+      ]
+    },
+    {
+      "eventId": 64771675,
+      "eventName": "Utah Jazz Total Points Over/Under 112.5",
+      "outcomes": [
+        {
+          "outcomeId": 1,
+          "outcomeName": "Over 112.5",
+          "price": 1.8,
+          "points": 0.0
+        },
+        {
+          "outcomeId": 2,
+          "outcomeName": "Under 112.5",
+          "price": 1.95,
+          "points": 0.0
+        }
+      ]
+    },
+    {
+      "eventId": 64771560,
+      "eventName": "Portland Trail Blazers Total Points Over/Under 117.5",
+      "outcomes": [
+        {
+          "outcomeId": 1,
+          "outcomeName": "Over 117.5",
+          "price": 1.68,
+          "points": 0.0
+        },
+        {
+          "outcomeId": 2,
+          "outcomeName": "Under 117.5",
+          "price": 2.1,
+          "points": 0.0
+        }
+      ]
+    },
+    {
+      "eventId": 64771561,
+      "eventName": "Portland Trail Blazers Total Points Over/Under 118.5",
+      "outcomes": [
+        {
+          "outcomeId": 1,
+          "outcomeName": "Over 118.5",
+          "price": 1.8,
+          "points": 0.0
+        },
+        {
+          "outcomeId": 2,
+          "outcomeName": "Under 118.5",
+          "price": 1.95,
+          "points": 0.0
+        }
+      ]
+    },
+    {
+      "eventId": 64771562,
+      "eventName": "Portland Trail Blazers Total Points Over/Under 119.5",
+      "outcomes": [
+        {
+          "outcomeId": 1,
+          "outcomeName": "Over 119.5",
+          "price": 1.91,
+          "points": 0.0
+        },
+        {
+          "outcomeId": 2,
+          "outcomeName": "Under 119.5",
+          "price": 1.83,
+          "points": 0.0
+        }
+      ]
+    },
+    {
+      "eventId": 64771563,
+      "eventName": "Portland Trail Blazers Total Points Over/Under 120.5",
+      "outcomes": [
+        {
+          "outcomeId": 1,
+          "outcomeName": "Over 120.5",
+          "price": 2.06,
+          "points": 0.0
+        },
+        {
+          "outcomeId": 2,
+          "outcomeName": "Under 120.5",
+          "price": 1.71,
+          "points": 0.0
+        }
+      ]
+    },
+    {
+      "eventId": 64771559,
+      "eventName": "Total Points Odd/Even",
+      "outcomes": [
+        {
+          "outcomeId": 1,
+          "outcomeName": "Even",
+          "price": 1.96,
+          "points": 0.0
+        },
+        {
+          "outcomeId": 2,
+          "outcomeName": "Odd",
+          "price": 1.84,
+          "points": 0.0
+        }
+      ]
+    },
+    {
+      "eventId": 64784106,
+      "eventName": "Player Points - Ace Bailey (UTA)",
+      "outcomes": [
+        {
+          "outcomeId": 1,
+          "outcomeName": "Ace Bailey 10+",
+          "price": 1.14,
+          "points": 0.0
+        },
+        {
+          "outcomeId": 2,
+          "outcomeName": "Ace Bailey 12+",
+          "price": 1.29,
+          "points": 0.0
+        }
+      ]
+    },
+    {
+      "eventId": 64784149,
+      "eventName": "Player Rebounds - Ace Bailey (UTA)",
+      "outcomes": [
+        {
+          "outcomeId": 1,
+          "outcomeName": "Ace Bailey 5+",
+          "price": 1.32,
+          "points": 0.0
+        },
+        {
+          "outcomeId": 2,
+          "outcomeName": "Ace Bailey 7+",
+          "price": 2.2,
+          "points": 0.0
+        }
+      ]
+    },
+    {
+      "eventId": 64784138,
+      "eventName": "Player Assists - Ace Bailey (UTA)",
+      "outcomes": [
+        {
+          "outcomeId": 1,
+          "outcomeName": "Ace Bailey 3+",
+          "price": 2.4,
+          "points": 0.0
+        },
+        {
+          "outcomeId": 2,
+          "outcomeName": "Ace Bailey 5+",
+          "price": 10.0,
+          "points": 0.0
+        }
+      ]
+    }
+  ],
+  "palmerbet": [
+    {
+      "status": "Open",
+      "title": "To Record 25+ Pts + Reb + Ast",
+      "id": "0499c4a9-0857-470b-955e-b1ebea468cb5",
+      "outcomes": [
+        {
+          "title": "Deni Avdija",
+          "status": "Active",
+          "prices": [
+            {
+              "name": "Fixed",
+              "priceSnapshot": {
+                "opening": 0.0,
+                "top": 0.0,
+                "current": 1.03
+              }
+            }
+          ],
+          "id": "083075b0-e137-4204-8d03-ef9cc2f8b40a"
+        },
+        {
+          "title": "Keyonte George",
+          "status": "Active",
+          "prices": [
+            {
+              "name": "Fixed",
+              "priceSnapshot": {
+                "opening": 0.0,
+                "top": 0.0,
+                "current": 1.11
+              }
+            }
+          ],
+          "id": "308b647b-8d4a-4a8d-a2c1-14e843b784c8"
+        }
+      ]
+    }
+  ],
+  "unibet": [
+    {
+      "id": 2710878421,
+      "criterion": {
+        "id": 1001159732,
+        "label": "Head To Head - Including Overtime",
+        "englishLabel": "Moneyline - Including Overtime",
+        "order": [],
+        "occurrenceType": "POINTS",
+        "lifetime": "FULL_TIME_OVERTIME"
+      },
+      "eventId": 1028754113,
+      "outcomes": [
+        {
+          "id": 4397223752,
+          "label": "Utah Jazz",
+          "odds": 2850,
+          "participant": "Utah Jazz",
+          "status": "OPEN"
+        },
+        {
+          "id": 4397223753,
+          "label": "Portland Trail Blazers",
+          "odds": 1430,
+          "participant": "Portland Trail Blazers",
+          "status": "OPEN"
+        }
+      ]
+    },
+    {
+      "id": 2710916215,
+      "criterion": {
+        "id": 1001159512,
+        "label": "Line - Including Overtime",
+        "englishLabel": "Point Spread - Including Overtime",
+        "order": [],
+        "occurrenceType": "POINTS",
+        "lifetime": "FULL_TIME_OVERTIME"
+      },
+      "eventId": 1028754113,
+      "outcomes": [
+        {
+          "id": 4397180432,
+          "label": "Utah Jazz",
+          "odds": 1980,
+          "line": 5500,
+          "participant": "Utah Jazz",
+          "status": "OPEN"
+        },
+        {
+          "id": 4397180433,
+          "label": "Portland Trail Blazers",
+          "odds": 1840,
+          "line": -5500,
+          "participant": "Portland Trail Blazers",
+          "status": "OPEN"
+        }
+      ]
+    },
+    {
+      "id": 2710916216,
+      "criterion": {
+        "id": 1001159509,
+        "label": "Total Points - Including Overtime",
+        "englishLabel": "Total Points - Including Overtime",
+        "order": [],
+        "occurrenceType": "POINTS",
+        "lifetime": "FULL_TIME_OVERTIME"
+      },
+      "eventId": 1028754113,
+      "outcomes": [
+        {
+          "id": 4397180434,
+          "label": "Over",
+          "odds": 1940,
+          "line": 233500,
+          "status": "OPEN"
+        },
+        {
+          "id": 4397180435,
+          "label": "Under",
+          "odds": 1860,
+          "line": 233500,
+          "status": "OPEN"
+        }
+      ]
+    }
+  ],
+  "blackstream": [
+    {
+      "id": 12663235,
+      "name": "Total Points Over / Under",
+      "outcomes": [
+        {
+          "id": 1,
+          "name": "Over +231.5",
+          "price": 1.91,
+          "points": 231.5,
+          "isOpenForBetting": true,
+          "isScratched": false
+        },
+        {
+          "id": 2,
+          "name": "Under +231.5",
+          "price": 1.9,
+          "points": 231.5,
+          "isOpenForBetting": true,
+          "isScratched": false
+        }
+      ],
+      "outcomeStack": null
+    },
+    {
+      "id": 12665835,
+      "name": "Player Points 20+",
+      "outcomes": [],
+      "outcomeStack": {
+        "competitor1": [
+          {
+            "id": 7,
+            "name": "Keyonte George",
+            "price": 1.43,
+            "points": 20.0,
+            "isOpenForBetting": true,
+            "isScratched": false
+          },
+          {
+            "id": 8,
+            "name": "Lauri Markkanen",
+            "price": 1.49,
+            "points": 20.0,
+            "isOpenForBetting": true,
+            "isScratched": false
+          }
+        ],
+        "middle": [],
+        "competitor2": [
+          {
+            "id": 2,
+            "name": "Deni Avdija",
+            "price": 1.28,
+            "points": 20.0,
+            "isOpenForBetting": true,
+            "isScratched": false
+          },
+          {
+            "id": 1,
+            "name": "Damian Lillard",
+            "price": 1.38,
+            "points": 20.0,
+            "isOpenForBetting": true,
+            "isScratched": false
+          }
+        ]
+      }
+    },
+    {
+      "id": 12665858,
+      "name": "Player 3s 2+",
+      "outcomes": [],
+      "outcomeStack": {
+        "competitor1": [
+          {
+            "id": 9,
+            "name": "Lauri Markkanen",
+            "price": 1.31,
+            "points": 2.0,
+            "isOpenForBetting": true,
+            "isScratched": false
+          },
+          {
+            "id": 8,
+            "name": "Keyonte George",
+            "price": 1.44,
+            "points": 2.0,
+            "isOpenForBetting": true,
+            "isScratched": false
+          }
+        ],
+        "middle": [],
+        "competitor2": [
+          {
+            "id": 1,
+            "name": "Damian Lillard",
+            "price": 1.17,
+            "points": 2.0,
+            "isOpenForBetting": true,
+            "isScratched": false
+          },
+          {
+            "id": 3,
+            "name": "Jrue Holiday",
+            "price": 1.37,
+            "points": 2.0,
+            "isOpenForBetting": true,
+            "isScratched": false
+          }
+        ]
+      }
+    },
+    {
+      "id": 12661964,
+      "name": "Odd or Even Total Points (Excluding Overtime)",
+      "outcomes": [
+        {
+          "id": 1,
+          "name": "Odd",
+          "price": 1.83,
+          "points": null,
+          "isOpenForBetting": true,
+          "isScratched": false
+        },
+        {
+          "id": 2,
+          "name": "Even",
+          "price": 1.95,
+          "points": null,
+          "isOpenForBetting": true,
+          "isScratched": false
+        }
+      ],
+      "outcomeStack": null
+    },
+    {
+      "id": 12664358,
+      "name": "Money Line and Total Points Over/Under (Including Overtime)",
+      "outcomes": [
+        {
+          "id": 1,
+          "name": "Utah Jazz and Over +231.5",
+          "price": 5.5,
+          "points": 231.5,
+          "isOpenForBetting": true,
+          "isScratched": false
+        },
+        {
+          "id": 2,
+          "name": "Utah Jazz and Under +231.5",
+          "price": 5.2,
+          "points": 231.5,
+          "isOpenForBetting": true,
+          "isScratched": false
+        }
+      ],
+      "outcomeStack": null
+    },
+    {
+      "id": 12661987,
+      "name": "Odd or Even Total Points",
+      "outcomes": [
+        {
+          "id": 1,
+          "name": "Odd",
+          "price": 1.88,
+          "points": null,
+          "isOpenForBetting": true,
+          "isScratched": false
+        },
+        {
+          "id": 2,
+          "name": "Even",
+          "price": 1.97,
+          "points": null,
+          "isOpenForBetting": true,
+          "isScratched": false
+        }
+      ],
+      "outcomeStack": null
+    },
+    {
+      "id": 12665829,
+      "name": "First Basket",
+      "outcomes": [],
+      "outcomeStack": {
+        "competitor1": [
+          {
+            "id": 6,
+            "name": "Lauri Markkanen",
+            "price": 7.5,
+            "points": null,
+            "isOpenForBetting": true,
+            "isScratched": false
+          },
+          {
+            "id": 7,
+            "name": "Keyonte George",
+            "price": 8.2,
+            "points": null,
+            "isOpenForBetting": true,
+            "isScratched": false
+          }
+        ],
+        "middle": [],
+        "competitor2": [
+          {
+            "id": 2,
+            "name": "Deni Avdija",
+            "price": 7.5,
+            "points": null,
+            "isOpenForBetting": true,
+            "isScratched": false
+          },
+          {
+            "id": 3,
+            "name": "Jrue Holiday",
+            "price": 7.5,
+            "points": null,
+            "isOpenForBetting": true,
+            "isScratched": false
+          }
+        ]
+      }
+    },
+    {
+      "id": 12665840,
+      "name": "First Team Basket Scorer",
+      "outcomes": [],
+      "outcomeStack": {
+        "competitor1": [
+          {
+            "id": 6,
+            "name": "Lauri Markkanen",
+            "price": 3.6,
+            "points": null,
+            "isOpenForBetting": true,
+            "isScratched": false
+          },
+          {
+            "id": 9,
+            "name": "Keyonte George",
+            "price": 4.2,
+            "points": null,
+            "isOpenForBetting": true,
+            "isScratched": false
+          }
+        ],
+        "middle": [],
+        "competitor2": [
+          {
+            "id": 1,
+            "name": "Deni Avdija",
+            "price": 3.8,
+            "points": null,
+            "isOpenForBetting": true,
+            "isScratched": false
+          },
+          {
+            "id": 3,
+            "name": "Jrue Holiday",
+            "price": 4.0,
+            "points": null,
+            "isOpenForBetting": true,
+            "isScratched": false
+          }
+        ]
+      }
+    },
+    {
+      "id": 12665883,
+      "name": "Ace Bailey - Pts + Reb + Ast",
+      "outcomes": [
+        {
+          "id": 1,
+          "name": "Ace Bailey Over +23.5",
+          "price": 1.9,
+          "points": 23.5,
+          "isOpenForBetting": true,
+          "isScratched": false
+        },
+        {
+          "id": 2,
+          "name": "Ace Bailey Under +23.5",
+          "price": 1.86,
+          "points": 23.5,
+          "isOpenForBetting": true,
+          "isScratched": false
+        }
+      ],
+      "outcomeStack": null
+    },
+    {
+      "id": 12665878,
+      "name": "Ace Bailey - Pts + Ast",
+      "outcomes": [
+        {
+          "id": 1,
+          "name": "Ace Bailey Over +17.5",
+          "price": 1.96,
+          "points": 17.5,
+          "isOpenForBetting": true,
+          "isScratched": false
+        },
+        {
+          "id": 2,
+          "name": "Ace Bailey Under +17.5",
+          "price": 1.8,
+          "points": 17.5,
+          "isOpenForBetting": true,
+          "isScratched": false
+        }
+      ],
+      "outcomeStack": null
+    },
+    {
+      "id": 12665888,
+      "name": "Ace Bailey - Reb + Ast",
+      "outcomes": [
+        {
+          "id": 1,
+          "name": "Ace Bailey Over +8.5",
+          "price": 2.0,
+          "points": 8.5,
+          "isOpenForBetting": true,
+          "isScratched": false
+        },
+        {
+          "id": 2,
+          "name": "Ace Bailey Under +8.5",
+          "price": 1.78,
+          "points": 8.5,
+          "isOpenForBetting": true,
+          "isScratched": false
+        }
+      ],
+      "outcomeStack": null
+    },
+    {
+      "id": 12665833,
+      "name": "Double Double",
+      "outcomes": [],
+      "outcomeStack": {
+        "competitor1": [
+          {
+            "id": 6,
+            "name": "Keyonte George",
+            "price": 5.2,
+            "points": null,
+            "isOpenForBetting": true,
+            "isScratched": false
+          },
+          {
+            "id": 8,
+            "name": "Ace Bailey",
+            "price": 6.0,
+            "points": null,
+            "isOpenForBetting": true,
+            "isScratched": false
+          }
+        ],
+        "middle": [],
+        "competitor2": [
+          {
+            "id": 1,
+            "name": "Donovan Clingan",
+            "price": 2.0,
+            "points": null,
+            "isOpenForBetting": true,
+            "isScratched": false
+          },
+          {
+            "id": 2,
+            "name": "Deni Avdija",
+            "price": 2.33,
+            "points": null,
+            "isOpenForBetting": true,
+            "isScratched": false
+          }
+        ]
+      }
+    }
+  ],
+  "betr": [
+    {
+      "eventId": 93401361,
+      "eventName": "Points - Ace Bailey (Portland Trail Blazers @ Utah Jazz)",
+      "outcomes": [
+        {
+          "outcomeId": 1,
+          "outcomeName": "Ace Bailey - 10+ Points",
+          "price": 1.14,
+          "points": 0.0,
+          "isOpenForBetting": true
+        },
+        {
+          "outcomeId": 2,
+          "outcomeName": "Ace Bailey - 12+ Points",
+          "price": 1.29,
+          "points": 0.0,
+          "isOpenForBetting": true
+        }
+      ]
+    }
+  ]
+}
