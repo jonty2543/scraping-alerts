@@ -54,7 +54,8 @@ async def run(args):
     results = []
     # Bookmakers and events are independent; sequential execution keeps feed load bounded.
     for book in args.bookmakers:
-        feed = FeedClient(browser_fallback=not args.no_browser, headless=not args.headed_browser)
+        feed = FeedClient(browser_fallback=not args.no_browser, headless=not args.headed_browser,
+                          palmerbet_interval=args.palmerbet_interval)
         scraper = NBAPropsScraper(feed, days=args.days, max_events=args.max_events)
         try:
             result = await scraper.scrape(book)
@@ -87,6 +88,14 @@ def positive_int(value):
     return result
 
 
+def positive_float(value):
+    import math
+    result = float(value)
+    if not math.isfinite(result) or result <= 0:
+        raise argparse.ArgumentTypeError('must be a positive finite number')
+    return result
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bookmakers', nargs='+', choices=BOOKMAKERS,
@@ -94,6 +103,8 @@ def parse_args(argv=None):
                         help='Bookmakers to scan; Picklebet is opt-in while its public feed denies access')
     parser.add_argument('--days', type=positive_int, default=7, help='Upcoming horizon, default 7 days')
     parser.add_argument('--max-events', type=positive_int, help='Limit each bookmaker for smoke tests; never retires older quotes')
+    parser.add_argument('--palmerbet-interval', type=positive_float, default=1.0,
+                        help='Minimum seconds between Palmerbet requests (default 1; raised automatically on HTTP 429)')
     browser = parser.add_mutually_exclusive_group()
     browser.add_argument('--no-browser', action='store_true', help='Use HTTP only')
     browser.add_argument('--headed-browser', action='store_true', help='Use a visible Chromium window (Linux: run with xvfb-run)')

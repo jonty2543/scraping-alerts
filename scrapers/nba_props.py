@@ -288,9 +288,29 @@ def parse_selection(market, outcome, teams=()):
             'line': line, 'side': side, 'price': price, 'source_market': name, 'source_selection': label}
 
 
+class FeedHTTPError(Exception):
+    def __init__(self, status, retry_after=None):
+        super().__init__('Feed HTTP ' + str(status))
+        self.status = status
+        self.retry_after = retry_after
+
+
+def retry_after_seconds(value, now=None):
+    """Retry-After can be seconds or an HTTP date; never shorten a server delay."""
+    from email.utils import parsedate_to_datetime
+    try:
+        seconds = float(value)
+    except (ValueError, TypeError):
+        try:
+            seconds = (parsedate_to_datetime(value) - (now or datetime.now(timezone.utc))).total_seconds()
+        except (ValueError, TypeError, OverflowError):
+            return None
+    return max(0.0, seconds) if math.isfinite(seconds) else None
+
+
 class FeedClient:
     """Bounded HTTP retries plus optional browser fallback, with visible failures."""
-    def __init__(self, browser_fallback=True, headless=True):
+    def __init__(self, browser_fallback=True, headless=True, palmerbet_interval=1.0):
         import asyncio
         self.browser_fallback = browser_fallback
         self.headless = headless
@@ -302,43 +322,89 @@ class FeedClient:
         self._page_locks = {}
         self.browser_requests = 0
         self._browser_hosts = set()
+        self._serial_hosts = {'fixture.palmerbet.online': asyncio.Lock()}
+        self._intervals = {'fixture.palmerbet.online': palmerbet_interval}
+        self._next_request = {}
+        self._pacing_locks = {}
+        self._stopped_hosts = set()
+        self.rate_limit_retries = 0
 
     async def get(self, url, optional=False, headers=None):
+        host = urlsplit(url).netloc
+        if host in self._serial_hosts:
+            # Bound both concurrency and request rate, including retries and browser requests.
+            async with self._serial_hosts[host]:
+                async with self._gate:
+                    return await self._get(url, optional, headers)
         async with self._gate:
             return await self._get(url, optional, headers)
 
+    async def pace(self, host):
+        import asyncio
+        lock = self._pacing_locks.setdefault(host, asyncio.Lock())
+        async with lock:
+            delay = self._next_request.get(host, 0) - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            self._next_request[host] = time.monotonic() + self._intervals.get(host, 0)
+
     async def _get(self, url, optional=False, headers=None):
         import asyncio
+        from urllib.error import HTTPError
         from urllib.request import Request, urlopen
         def request():
             with urlopen(Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json',
                                               'Cache-Control': 'no-cache', **(headers or {})}), timeout=20) as response:
                 import json
                 return json.load(response)
-        error = None
         host = urlsplit(url).netloc
-        if host in self._browser_hosts:
-            try:
-                return await self.browser_json(url, headers=headers)
-            except Exception as exc:
-                if not optional:
-                    self.errors.append({'url': url, 'error': 'Browser feed: ' + str(exc)})
+        if host in self._stopped_hosts:
+            return None  # An earlier failure already marked this bookmaker incomplete.
+        error = None
+        browser = host in self._browser_hosts
+        http_failures = rate_limits = 0
+        while True:
+            if host in self._stopped_hosts:
                 return None
-        for attempt in range(2):
+            await self.pace(host)
+            if host in self._stopped_hosts:
+                return None
             try:
+                if browser:
+                    result = await self.browser_json(url, headers=headers)
+                    self._browser_hosts.add(host)
+                    return result
                 return await asyncio.to_thread(request)
             except Exception as exc:
                 error = exc
-                if attempt == 0:
+                status = exc.code if isinstance(exc, HTTPError) else getattr(exc, 'status', None)
+                if status == 429:
+                    header = (exc.headers or {}).get('Retry-After') if isinstance(exc, HTTPError) else getattr(exc, 'retry_after', None)
+                    delay = retry_after_seconds(header)
+                    delay = max(1.0, delay) if delay is not None else 5.0 * 2 ** rate_limits
+                    self._next_request[host] = max(self._next_request.get(host, 0), time.monotonic() + delay)
+                    interval = self._intervals.get(host, 0)
+                    self._intervals[host] = max(interval, min(4.0, max(1.0, interval) * 2))
+                    # Do not switch transports to evade a rate limit. Stop this host
+                    # if recovery exceeds the bounded budget, preserving partial quotes.
+                    if rate_limits >= 3 or delay > 60:
+                        self._stopped_hosts.add(host)
+                        error = ValueError('HTTP 429: rate limit recovery budget exhausted; remaining host requests skipped')
+                        break
+                    rate_limits += 1
+                    self.rate_limit_retries += 1
+                    continue
+                if browser:
+                    break
+                http_failures += 1
+                if http_failures < 2:
                     await asyncio.sleep(0.5)
-        if self.browser_fallback:
-            try:
-                result = await self.browser_json(url, headers=headers)
-                self._browser_hosts.add(host)
-                return result
-            except Exception as exc:
-                error = str(error) + '; browser fallback: ' + str(exc)
-        if not optional:
+                    continue
+                if self.browser_fallback:
+                    browser = True
+                    continue
+                break
+        if not optional or host in self._stopped_hosts:
             self.errors.append({'url': url, 'error': str(error)})
         return None
 
@@ -382,22 +448,28 @@ class FeedClient:
             if host == 'web20-api.bluebet.com.au':
                 if page.url == 'about:blank':
                     # The NBA page makes this request itself and establishes the public session.
-                    async with page.expect_response(lambda r: r.url == url and r.ok, timeout=30000) as pending:
+                    async with page.expect_response(lambda r: r.url == url, timeout=30000) as pending:
                         await page.goto(BETR_SITE, wait_until='domcontentloaded', timeout=30000)
-                    return await (await pending.value).json()
+                    response = await pending.value
+                    if not response.ok:
+                        raise FeedHTTPError(response.status, response.headers.get('retry-after'))
+                    return await response.json()
                 result = await page.evaluate('''async ({url, headers}) => {
                     const response = await fetch(url, {credentials: 'include', headers,
                         signal: AbortSignal.timeout(20000)});
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                    return await response.json();
+                    return {status: response.status, retryAfter: response.headers.get('Retry-After'),
+                        data: response.ok ? await response.json() : null};
                 }''', {'url': url, 'headers': headers or {'Accept': 'application/json'}})
-                return result
+                if not 200 <= result['status'] < 300:
+                    raise FeedHTTPError(result['status'], result.get('retryAfter'))
+                return result['data']
             # Navigating to the public JSON endpoint uses Chromium's network stack,
             # unlike APIRequestContext, which was only repeating the failed HTTP request.
             await page.set_extra_http_headers(headers or {})
             response = await page.goto(url, wait_until='domcontentloaded', timeout=30000)
             if response is None or not response.ok:
-                raise ValueError('Browser feed HTTP ' + str(response.status if response else 'no response'))
+                raise FeedHTTPError(response.status if response else 0,
+                                    response.headers.get('retry-after') if response else None)
             return await response.json()
 
     async def close(self):
@@ -416,6 +488,7 @@ class NBAPropsScraper:
         self.max_events = max_events
         self.seen_events = 0
         self.rows = {}
+        self.source_diagnostics = {}
 
     def event(self, book, event_id, name, start, teams=(), live=False):
         from datetime import timedelta
@@ -546,10 +619,12 @@ class NBAPropsScraper:
                 for link in market.get('_links', []):
                     if link.get('rel') == 'price' and link.get('method', 'GET') == 'GET':
                         detail = await self.client.get(with_query(urljoin(PALM, link['href']), channel='website'))
+                        if detail is None:
+                            return  # FeedClient already recorded the request failure.
                         self.require((detail or {}).get('market', {}).get('outcomes'), list, 'Palmerbet market prices')
                         self.collect(event, detail)
                         break
-            # The HTTP client limits concurrency to four requests.
+            # Palmerbet's host limiter serializes and paces these requests.
             await self.collect_many(collect_market(m) for m in (markets or {}).get('markets', []))
 
     async def category_feed(self, book, base):
@@ -649,6 +724,7 @@ class NBAPropsScraper:
                                 self.collect(event, market)
 
     async def tab(self):
+        self.source_diagnostics['player_ou_markets'] = 0
         feed = await self.client.get(TAB + '?jurisdiction=QLD&numTopMarkets=5')
         self.require((feed or {}).get('matches'), list, 'TAB NBA matches')
         # TAB's abbreviated team labels must match the full names in other feeds.
@@ -689,6 +765,11 @@ class NBAPropsScraper:
                 for prop in market.get('propositions', []):
                     if prop.get('bettingStatus') == 'Open' and prop.get('isOpen', True):
                         normalized['outcomes'].append(dict(prop, price=prop.get('returnWin')))
+                stat, period = classify(option)
+                sides = {m.group(1).lower() for p in normalized['outcomes']
+                         for m in [re.search(r'\b(over|under)\b', p.get('name', ''), re.I)] if m}
+                if 'player' in text(option) and stat in TARGET_STATS and period == 'game' and sides == {'over', 'under'}:
+                    self.source_diagnostics['player_ou_markets'] += 1
                 self.collect(event, normalized)
 
     async def picklebet(self):
@@ -832,4 +913,6 @@ class NBAPropsScraper:
             status = 'no_eligible_pairs'
         return {'status': status, 'parsed_selections': len(parsed), 'eligible_pairs': len(selected) // 2,
                 'milestone_selections': sides['at_least'], 'parsed_sides': dict(sides),
-                'browser_requests': getattr(self.client, 'browser_requests', 0)}
+                'browser_requests': getattr(self.client, 'browser_requests', 0),
+                'rate_limit_retries': getattr(self.client, 'rate_limit_retries', 0),
+                'source_diagnostics': dict(self.source_diagnostics)}

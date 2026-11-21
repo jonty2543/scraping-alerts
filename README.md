@@ -53,7 +53,25 @@ A feed or storage error gives exit status 1; configuration errors give status 2.
 Zero listed props is reported as zero, separately from request failures.
 The `coverage` object reports `available`, `milestones_only`, `no_eligible_pairs`,
 `no_upcoming_events`, or `feed_error`, plus eligible pair counts, parsed sides,
-milestone counts, and browser request counts. Storage failures report `storage_error`.
+milestone counts, browser request counts, and rate-limit retries. TAB additionally
+reports `source_diagnostics.player_ou_markets` so an absence of published O/U
+markets can be distinguished from parser problems. Storage failures report `storage_error`.
+
+Palmerbet requests run one at a time, with at least one second between requests.
+Its full scan can take several minutes. Increase the spacing on EC2 if needed:
+
+```sh
+bash scripts/run_nba_props_ec2.sh --palmerbet-interval 2
+```
+
+HTTP 429 responses keep the current transport and respect `Retry-After` (seconds
+or an HTTP date). Without that header, retries back off for 5, 10, then 20 seconds.
+The client also increases subsequent request spacing. After three recovery
+attempts, or a requested delay longer than 60 seconds, the remaining requests for
+that host are stopped and the scan is marked incomplete. Successful partial
+prices can still be refreshed with `--write`; missing prices are not retired.
+Rate limits never trigger switching to a browser, and skipped requests do not
+produce a flood of repeated missing-market errors.
 
 ### Browser feeds and EC2
 
@@ -165,7 +183,7 @@ Before narrowing to the six over/under stats, live HTTP smoke checks on 31 Octob
 | --- | --- |
 | Sportsbet | NBA events → all event markets; hundreds of player selections per game |
 | Pointsbet | NBA competition discovery → paginated events → full fixed-odds markets, including alternates |
-| Palmerbet | Discover the NBA competition first → its own match list → individual market price links. The general basketball list can omit NBA games. Requests are limited to four at a time. |
+| Palmerbet | Discover the NBA competition first → its own match list → individual market price links. The general basketball list can omit NBA games. Requests are serial and paced, with rate-limit backoff. |
 | Betright | NBA category → master events → default markets plus every advertised `groupTypeCode` |
 | Unibet | NBA view → event detail + Kambi bet offers; the tested event had only game lines and no player props |
 | Betdeluxe | Blackstream event and dedicated player-market endpoints, with the website's public `X-NextGen-OrgId: 400` header on every request. Milestone-only single-stat feeds still produce no eligible O/U pairs. |

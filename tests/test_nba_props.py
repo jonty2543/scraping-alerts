@@ -1,14 +1,16 @@
 import asyncio
+import io
 import json
 import os
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from urllib.error import HTTPError
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from nba_scraper import parse_args, store_result, load_env
-from scrapers.nba_props import NBAPropsScraper, FeedClient, classify, parse_selection, is_nba, select_main_lines, with_query, firestore_document
+from scrapers.nba_props import NBAPropsScraper, FeedClient, FeedHTTPError, retry_after_seconds, classify, parse_selection, is_nba, select_main_lines, with_query, firestore_document
 
 FIXTURES = json.loads((Path(__file__).parent / 'fixtures/nba_props.json').read_text())
 NOW = datetime(2026, 10, 31, tzinfo=timezone.utc)
@@ -284,6 +286,7 @@ class AdapterCoverageTests(unittest.TestCase):
         self.assertEqual({r['price'] for r in result['rows']}, {1.85, 1.95})
         self.assertEqual(result['rows'][0]['event_key'], 'new york knicks v portland trail blazers|2026-11-01')
         self.assertEqual(result['coverage']['eligible_pairs'], 1)
+        self.assertEqual(result['coverage']['source_diagnostics']['player_ou_markets'], 1)
 
     def test_betdeluxe_branded_player_feed_retains_player_context(self):
         class Client:
@@ -385,13 +388,98 @@ class BrowserFeedTests(unittest.TestCase):
         async def run():
             feed = FeedClient()
             page = MagicMock(url='https://www.betr.com.au/')
-            page.evaluate = AsyncMock(return_value={'Events': []})
+            page.evaluate = AsyncMock(return_value={'status': 200, 'data': {'Events': []}})
             feed.browser_page = AsyncMock(return_value=page)
             result = await feed.browser_json('https://web20-api.bluebet.com.au/MasterEvent?MasterEventId=1')
             self.assertEqual(result, {'Events': []})
             script, args = page.evaluate.call_args.args
             self.assertIn("credentials: 'include'", script)
             self.assertIn('MasterEventId=1', args['url'])
+        asyncio.run(run())
+
+
+class RateLimitTests(unittest.TestCase):
+    def test_retry_after_numeric_date_and_invalid_values(self):
+        from email.utils import format_datetime
+        self.assertEqual(retry_after_seconds('12'), 12)
+        self.assertEqual(retry_after_seconds(format_datetime(NOW + timedelta(seconds=12), usegmt=True), now=NOW), 12)
+        for value in (None, 'invalid', 'NaN', 'inf'):
+            self.assertIsNone(retry_after_seconds(value))
+
+    def test_http_429_waits_for_retry_after_without_browser_fallback(self):
+        async def run():
+            feed = FeedClient()
+            feed.browser_json = AsyncMock()
+            url = 'https://fixture.palmerbet.online/market'
+            with patch('urllib.request.urlopen', side_effect=[HTTPError(url, 429, 'Too Many Requests', {'Retry-After': '7'}, None),
+                       io.BytesIO(b'{"market": {}}')]), patch('asyncio.sleep', new=AsyncMock()) as sleep:
+                result = await feed.get(url)
+            self.assertEqual(result, {'market': {}})
+            self.assertEqual(feed.errors, [])
+            self.assertEqual(feed.rate_limit_retries, 1)
+            self.assertGreater(sleep.await_args_list[0].args[0], 6.8)
+            feed.browser_json.assert_not_awaited()
+        asyncio.run(run())
+
+    def test_long_retry_after_stops_host_without_repeated_requests(self):
+        async def run():
+            feed = FeedClient()
+            feed.browser_json = AsyncMock()
+            url = 'https://fixture.palmerbet.online/market'
+            with patch('urllib.request.urlopen', side_effect=HTTPError(url, 429, 'Too Many Requests', {'Retry-After': '120'}, None)) as http:
+                self.assertIsNone(await feed.get(url))
+                self.assertIsNone(await feed.get(url + '2'))
+            self.assertEqual(http.call_count, 1)
+            self.assertEqual(len(feed.errors), 1)
+            feed.browser_json.assert_not_awaited()
+        asyncio.run(run())
+
+    def test_persistent_429_has_bounded_retries_and_one_failure(self):
+        async def run():
+            feed = FeedClient()
+            url = 'https://fixture.palmerbet.online/market'
+            with patch('urllib.request.urlopen', side_effect=HTTPError(url, 429, 'Too Many Requests', {}, None)) as http, \
+                    patch('asyncio.sleep', new=AsyncMock()):
+                self.assertIsNone(await feed.get(url))
+                self.assertIsNone(await feed.get(url + '2'))
+            self.assertEqual(http.call_count, 4)
+            self.assertEqual(feed.rate_limit_retries, 3)
+            self.assertEqual(len(feed.errors), 1)
+        asyncio.run(run())
+
+    def test_browser_429_uses_same_backoff_and_keeps_successful_session(self):
+        async def run():
+            feed = FeedClient()
+            feed._browser_hosts.add('web20-api.bluebet.com.au')
+            feed.browser_json = AsyncMock(side_effect=[FeedHTTPError(429, '3'), {'Events': []}])
+            with patch('urllib.request.urlopen') as http, patch('asyncio.sleep', new=AsyncMock()) as sleep:
+                result = await feed.get('https://web20-api.bluebet.com.au/MasterEvent?MasterEventId=1')
+            self.assertEqual(result, {'Events': []})
+            self.assertEqual(feed.errors, [])
+            self.assertGreater(sleep.await_args_list[0].args[0], 2.8)
+            http.assert_not_called()
+        asyncio.run(run())
+
+    def test_palmerbet_requests_are_serial_and_spaced(self):
+        async def run():
+            feed = FeedClient(palmerbet_interval=1.5)
+            url = 'https://fixture.palmerbet.online/market'
+            with patch('urllib.request.urlopen', side_effect=[io.BytesIO(b'{}'), io.BytesIO(b'{}')]), \
+                    patch('asyncio.sleep', new=AsyncMock()) as sleep:
+                await feed.get(url)
+                await feed.get(url + '2')
+            self.assertGreater(sleep.await_args_list[0].args[0], 1.3)
+            active = peak = 0
+            async def request(*args):
+                nonlocal active, peak
+                active += 1
+                peak = max(peak, active)
+                await asyncio.sleep(0)
+                active -= 1
+                return {}
+            feed._get = request
+            await asyncio.gather(*(feed.get(url + str(i)) for i in range(4)))
+            self.assertEqual(peak, 1)
         asyncio.run(run())
 
 
