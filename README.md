@@ -73,6 +73,16 @@ prices can still be refreshed with `--write`; missing prices are not retired.
 Rate limits never trigger switching to a browser, and skipped requests do not
 produce a flood of repeated missing-market errors.
 
+If the first Palmerbet request fails with zero retries, its `Retry-After` may be
+longer than the 60-second in-run wait limit. The error includes the original
+`retry_after` header, `wait_seconds`, and `retry_at_utc` (the earliest retry time,
+not a guarantee of access). Leave Palmerbet out of runs until that time rather
+than repeatedly probing it. Other bookmakers can still refresh independently:
+
+```sh
+bash scripts/run_nba_props_ec2.sh --bookmakers Pointsbet Unibet Betright Betr --write
+```
+
 ### Browser feeds and EC2
 
 betr's fallback now opens its public NBA page to establish a session, then fetches

@@ -328,6 +328,7 @@ class FeedClient:
         self._pacing_locks = {}
         self._stopped_hosts = set()
         self.rate_limit_retries = 0
+        self.rate_limit_details = {}
 
     async def get(self, url, optional=False, headers=None):
         host = urlsplit(url).netloc
@@ -380,8 +381,16 @@ class FeedClient:
                 status = exc.code if isinstance(exc, HTTPError) else getattr(exc, 'status', None)
                 if status == 429:
                     header = (exc.headers or {}).get('Retry-After') if isinstance(exc, HTTPError) else getattr(exc, 'retry_after', None)
-                    delay = retry_after_seconds(header)
-                    delay = max(1.0, delay) if delay is not None else 5.0 * 2 ** rate_limits
+                    requested_delay = retry_after_seconds(header)
+                    delay = max(1.0, requested_delay) if requested_delay is not None else 5.0 * 2 ** rate_limits
+                    from datetime import timedelta
+                    try:
+                        retry_at = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
+                    except OverflowError:
+                        retry_at = None
+                    self.rate_limit_details[host] = {
+                        'http_status': 429, 'retry_after': header, 'wait_seconds': delay,
+                        'retry_at_utc': retry_at, 'delay_source': 'Retry-After' if requested_delay is not None else 'backoff'}
                     self._next_request[host] = max(self._next_request.get(host, 0), time.monotonic() + delay)
                     interval = self._intervals.get(host, 0)
                     self._intervals[host] = max(interval, min(4.0, max(1.0, interval) * 2))
@@ -389,7 +398,9 @@ class FeedClient:
                     # if recovery exceeds the bounded budget, preserving partial quotes.
                     if rate_limits >= 3 or delay > 60:
                         self._stopped_hosts.add(host)
-                        error = ValueError('HTTP 429: rate limit recovery budget exhausted; remaining host requests skipped')
+                        reason = ('server cooldown exceeds the 60-second in-run wait limit'
+                                  if delay > 60 else 'rate limit recovery budget exhausted')
+                        error = ValueError('HTTP 429: ' + reason + '; remaining host requests skipped')
                         break
                     rate_limits += 1
                     self.rate_limit_retries += 1
@@ -405,7 +416,10 @@ class FeedClient:
                     continue
                 break
         if not optional or host in self._stopped_hosts:
-            self.errors.append({'url': url, 'error': str(error)})
+            failure = {'url': url, 'error': str(error)}
+            if host in self._stopped_hosts:
+                failure.update(self.rate_limit_details[host])
+            self.errors.append(failure)
         return None
 
     async def query_json(self, url, body):
@@ -582,6 +596,8 @@ class NBAPropsScraper:
     async def palmerbet(self):
         root = PALM + '/fixtures/sports/b26e5acc-02ff-4b22-ae69-0491fbd2500e'
         sport = await self.client.get(root + '?sportType=Basketball&channel=website')
+        if sport is None and self.client.errors:
+            return
         self.require((sport or {}).get('sportItem', {}).get('subItems'), list, 'Palmerbet competitions')
         competitions = [c for c in sport['sportItem']['subItems'] if is_nba(c.get('title'))]
         if not competitions:
@@ -595,6 +611,8 @@ class NBAPropsScraper:
                     raise ValueError('Palmerbet repeated pagination link')
                 visited.add(url)
                 feed = await self.client.get(url)
+                if feed is None and self.client.errors:
+                    return
                 self.require((feed or {}).get('matches'), list, 'Palmerbet NBA matches')
                 games.update((g['eventId'], g) for g in feed['matches'])
                 next_link = next((l['href'] for l in feed.get('_links', []) if l.get('rel') == 'next'), None)
@@ -607,6 +625,8 @@ class NBAPropsScraper:
             if not event:
                 continue
             markets = await self.client.get(PALM + '/fixtures/sports/matches/' + game['eventId'] + '/markets?sportType=Basketball&pageSize=1000&channel=website')
+            if markets is None and self.client.errors:
+                return
             self.require((markets or {}).get('markets'), list, 'Palmerbet markets')
             async def collect_market(market):
                 stat, period = classify(market_name(market))

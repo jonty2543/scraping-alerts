@@ -431,8 +431,23 @@ class RateLimitTests(unittest.TestCase):
                 self.assertIsNone(await feed.get(url + '2'))
             self.assertEqual(http.call_count, 1)
             self.assertEqual(len(feed.errors), 1)
+            self.assertEqual(feed.errors[0]['http_status'], 429)
+            self.assertEqual(feed.errors[0]['wait_seconds'], 120)
+            self.assertEqual(feed.errors[0]['retry_after'], '120')
+            self.assertEqual(feed.errors[0]['delay_source'], 'Retry-After')
+            self.assertIn('server cooldown', feed.errors[0]['error'])
+            self.assertGreater(datetime.fromisoformat(feed.errors[0]['retry_at_utc']), datetime.now(timezone.utc))
             feed.browser_json.assert_not_awaited()
         asyncio.run(run())
+
+    def test_palmerbet_initial_rate_limit_is_not_a_schema_error(self):
+        client = MagicMock(errors=[{'error': 'HTTP 429', 'wait_seconds': 120}])
+        client.get = AsyncMock(return_value=None)
+        result = asyncio.run(NBAPropsScraper(client, now=NOW).scrape('Palmerbet'))
+        self.assertFalse(result['complete'])
+        self.assertEqual(result['coverage']['status'], 'feed_error')
+        self.assertEqual(result['errors'], client.errors)
+        self.assertEqual(len(result['errors']), 1)
 
     def test_persistent_429_has_bounded_retries_and_one_failure(self):
         async def run():
