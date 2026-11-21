@@ -5,10 +5,10 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from nba_scraper import parse_args, store_result, load_env
-from scrapers.nba_props import NBAPropsScraper, classify, parse_selection, is_nba, select_main_lines
+from scrapers.nba_props import NBAPropsScraper, FeedClient, classify, parse_selection, is_nba, select_main_lines, with_query, firestore_document
 
 FIXTURES = json.loads((Path(__file__).parent / 'fixtures/nba_props.json').read_text())
 NOW = datetime(2026, 10, 31, tzinfo=timezone.utc)
@@ -46,6 +46,18 @@ class ParserTests(unittest.TestCase):
         self.assertEqual((p['period'], p['line'], p['side']), ('first_3_minutes', 1, 'at_least'))
         p = self.parse('First Basket', 'Ace Bailey')
         self.assertEqual((p['stat'], p['side']), ('first_basket', 'win'))
+
+    def test_unibet_numbered_period_labels_are_not_full_game(self):
+        for label, period in [('Quarter 1', 'q1'), ('Quarter 2', 'q2'), ('Quarter 3', 'q3'),
+                              ('Quarter 4', 'q4'), ('Q1', 'q1'), ('Q 1', 'q1'),
+                              ('1Q', 'q1'), ('1st Quarter', 'q1'), ('Half 1', 'h1'),
+                              ('Half 2', 'h2'), ('H1', 'h1'), ('2H', 'h2')]:
+            with self.subTest(label=label):
+                self.assertEqual(classify('Points Scored by the Player - ' + label), ('points', period))
+        parsed = parse_selection({'criterion': {'label': 'Points Scored by the Player - Quarter 1'}},
+                                 {'label': 'Over', 'participant': 'Onyeka Okongwu', 'line': 3500, 'odds': 1830})
+        self.assertEqual((parsed['stat'], parsed['period'], parsed['line']), ('points', 'q1', 3.5))
+        self.assertEqual(classify('Points Scored by the Player - Including Overtime'), ('points', 'game'))
 
     def test_double_double(self):
         p = self.parse('To Record A Double Double', 'Ace Bailey')
@@ -203,6 +215,186 @@ class ScraperTests(unittest.TestCase):
         self.assertEqual(sum('GroupTypeCode=' in u for u in client.urls), 2)
 
 
+class AdapterCoverageTests(unittest.TestCase):
+    def test_palmerbet_discovers_nba_instead_of_general_basketball_match_list(self):
+        class Client:
+            errors = []
+            urls = []
+            async def get(self, url):
+                self.urls.append(url)
+                if '/fixtures/sports/b26e5acc-' in url:
+                    return {'sportItem': {'subItems': [{'id': 'nba', 'title': 'NBA'}, {'id': 'wnba', 'title': 'WNBA'}]}}
+                if '/nba/matches?' in url:
+                    return {'matches': [{'eventId': '1', 'paths': [{'title': 'NBA'}], 'status': 'NotStarted',
+                        'homeTeam': {'title': TEAMS[0]}, 'awayTeam': {'title': TEAMS[1]},
+                        'startTime': '2026-10-31T19:00:00Z'}]}
+                return {'markets': [{'id': 'p', 'name': 'Ace Bailey - Points', 'outcomes': [
+                    {'id': 'o', 'name': 'Over 15.5', 'price': 1.9}, {'id': 'u', 'name': 'Under 15.5', 'price': 1.9}]}]}
+        client = Client()
+        result = asyncio.run(NBAPropsScraper(client, now=NOW).scrape('Palmerbet'))
+        self.assertEqual(len(result['rows']), 2)
+        self.assertTrue(result['complete'])
+        self.assertTrue(any('/nba/matches?' in u for u in client.urls))
+        self.assertFalse(any('/b26e5acc-' in u and '/matches?' in u for u in client.urls))
+        self.assertFalse(any('/wnba/' in u for u in client.urls))
+
+    def test_betright_requests_separate_player_groups(self):
+        class Client:
+            errors = []
+            urls = []
+            async def get(self, url):
+                self.urls.append(url)
+                if 'MasterCategory?' in url:
+                    return {'masterCategories': [{'categories': [{'categoryName': 'NBA', 'categoryId': 54}]}]}
+                if '/Category?' in url:
+                    return {'masterCategories': [{'masterEvents': [{'masterEventId': 1,
+                        'masterEventName': 'Utah Jazz v Portland Trail Blazers',
+                        'maxAdvertisedStartTimeUtc': '2026-10-31T19:00:00Z'}]}]}
+                if 'groupTypeCode=' in url:
+                    return {'events': [{'id': 9, 'name': 'Ace Bailey - Points', 'outcomes': [
+                        {'id': 1, 'name': 'Over 15.5', 'price': 1.9}, {'id': 2, 'name': 'Under 15.5', 'price': 1.9}]}]}
+                return {'events': [], 'groupLinks': [{'groupTypeCode': 'G199'}]}
+        client = Client()
+        result = asyncio.run(NBAPropsScraper(client, now=NOW).scrape('Betright'))
+        self.assertEqual(len(result['rows']), 2)
+        self.assertTrue(any('groupTypeCode=G199' in u for u in client.urls))
+
+    def test_tab_prices_identity_and_suspension(self):
+        def market(stat, **extra):
+            return {'id': stat, 'name': 'NBA Uta-Por Ace Bailey', 'betOption': stat, 'bettingStatus': 'Open',
+                'propositions': [{'id': stat + 'o', 'name': 'Ace Bailey Over 15.5 Pts', 'returnWin': 1.85, 'bettingStatus': 'Open'},
+                                 {'id': stat + 'u', 'name': 'Ace Bailey Under 15.5 Pts', 'returnWin': 1.95, 'bettingStatus': 'Open'}], **extra}
+        class Client:
+            errors = []
+            async def get(self, url):
+                if '/matches/' in url:
+                    suspended = market('Player Assists')
+                    suspended['propositions'][1]['isOpen'] = False
+                    team_total = market('Home Total Points O/U')
+                    for p in team_total['propositions']:
+                        p['name'] = p['name'].replace('Ace Bailey', 'New York')
+                    return {'markets': [market('Player Points'), market('Player Rebounds', bettingStatus='Suspended'),
+                        market('Player Blocks', phoneBettingOnly=True), market('1st Quarter Player Points'), suspended, team_total]}
+                return {'matches': [{'id': 'NyPor', 'name': 'New York v Portland', 'competitors': ['New York', 'Portland'],
+                    'startTime': '2026-10-31T19:00:00Z', '_links': {'self':
+                        'https://api.beta.tab.com.au/v1/tab-info-service/sports/Basketball/competitions/NBA/matches/Utah%20v%20Portland?jurisdiction=QLD'}}]}
+        scraper = NBAPropsScraper(Client(), now=NOW)
+        result = asyncio.run(scraper.scrape('TAB'))
+        self.assertEqual(len(result['rows']), 2)
+        self.assertEqual({r['price'] for r in result['rows']}, {1.85, 1.95})
+        self.assertEqual(result['rows'][0]['event_key'], 'new york knicks v portland trail blazers|2026-11-01')
+        self.assertEqual(result['coverage']['eligible_pairs'], 1)
+
+    def test_betdeluxe_branded_player_feed_retains_player_context(self):
+        class Client:
+            errors = []
+            requests = []
+            async def get(self, url, headers=None):
+                self.requests.append((url, headers))
+                if url.endswith('/competitions'):
+                    return {'data': {'regions': [{'competitions': [{'id': 5952, 'name': 'NBA'}]}]}}
+                if '/competitions/5952/events' in url:
+                    return {'data': {'events': [{'id': 1, 'name': 'Utah Jazz v Portland Trail Blazers',
+                        'advertisedStartTimeUtc': '2026-10-31T19:00:00Z'}]}}
+                if url.endswith('/player-markets'):
+                    return {'data': {'playerMarketGroups': [{'name': 'Points', 'isActive': True, 'players': [
+                        {'name': 'Ace Bailey', 'selections': [
+                            {'id': 1, 'marketId': 9, 'marketFullName': 'Player Points', 'marketName': 'Over 15.5', 'price': 1.9},
+                            {'id': 2, 'marketId': 9, 'marketFullName': 'Player Points', 'marketName': 'Under 15.5', 'price': 1.9},
+                            {'id': 3, 'marketId': 10, 'marketFullName': 'Player Points 20+', 'marketName': '20+', 'price': 2.5}]}]}]}}
+                return {'data': {'marketGroups': []}}
+        client = Client()
+        result = asyncio.run(NBAPropsScraper(client, now=NOW).scrape('Betdeluxe'))
+        self.assertEqual(len(result['rows']), 2)
+        self.assertTrue(all(r['player'] == 'Ace Bailey' for r in result['rows']))
+        self.assertEqual(result['coverage']['milestone_selections'], 1)
+        self.assertTrue(all(h == {'X-NextGen-OrgId': '400'} for u, h in client.requests))
+
+    def test_coverage_distinguishes_milestones_from_failures(self):
+        client = MagicMock(errors=[], browser_requests=0)
+        scraper = NBAPropsScraper(client, now=NOW)
+        event = scraper.event('Betdeluxe', 1, 'Utah Jazz v Portland Trail Blazers', '2026-10-31T19:00:00Z')
+        scraper.collect(event, {'id': 1, 'name': 'Player Points 20+', 'outcomes': [{'id': 1, 'name': 'Ace Bailey', 'price': 1.9}]})
+        self.assertEqual(scraper.coverage()['status'], 'milestones_only')
+        client.errors.append({'error': 'HTTP 403'})
+        self.assertEqual(scraper.coverage()['status'], 'feed_error')
+
+    def test_query_parameters_preserve_existing_price_query(self):
+        self.assertEqual(with_query('https://example.com/price?id=1&channel=app', channel='website'),
+                         'https://example.com/price?id=1&channel=website')
+
+    def test_pickle_decimal_prices_player_identity_and_single_only_markets(self):
+        scraper = NBAPropsScraper(MagicMock(errors=[]), now=NOW)
+        event = scraper.event('Picklebet', 'g', 'Utah Jazz v Portland Trail Blazers', '2026-10-31T19:00:00Z')
+        competitors = {'p': {'name': 'Ace Bailey', 'type': 'PLAYER'}, 't': {'name': 'Utah Jazz', 'type': 'FRANCHISE'}}
+        market = {'id': 'p-pts', 'name': 'Player Points', 'status': 'ACTIVE', 'bettingType': 'Prematch',
+            'allowedSelectionTypes': ['SingleOutcome'], 'specifiers': {'player': 'p', 'total': '15.5'},
+            'outcomes': {'o': {'type': 'OVER', 'odds': 1.85, 'active': True},
+                         'u': {'type': 'UNDER', 'odds': 1.95, 'active': True}}}
+        scraper.collect_pickle_market(event, market, competitors)
+        selected = select_main_lines(scraper.rows.values())
+        self.assertEqual(len(selected), 2)
+        self.assertEqual({r['price'] for r in selected}, {1.85, 1.95})
+        self.assertTrue(all(r['player'] == 'Ace Bailey' and r['line'] == 15.5 for r in selected))
+        for override in [{'status': 'SUSPENDED'}, {'bettingType': 'Live'}, {'campaignOnly': True},
+                         {'allowedSelectionTypes': ['SameEventMulti']}]:
+            scraper.collect_pickle_market(event, dict(market, id='excluded', **override), competitors)
+        self.assertEqual(len(scraper.rows), 2)
+
+    def test_pickle_permission_failure_cannot_be_a_complete_empty_scan(self):
+        client = MagicMock(errors=[{'error': 'HTTP 403'}])
+        client.query_json = AsyncMock(return_value=None)
+        with self.assertRaisesRegex(ValueError, 'permission denial'):
+            asyncio.run(NBAPropsScraper(client, now=NOW).scrape('Picklebet'))
+
+    def test_missing_nba_category_cannot_retire_existing_prices(self):
+        for book in ('Betr', 'Betright', 'Palmerbet'):
+            client = MagicMock(errors=[])
+            client.get = AsyncMock(return_value={'masterCategories': [], 'sportItem': {'subItems': []}})
+            with self.subTest(book=book), self.assertRaisesRegex(ValueError, 'NBA'):
+                asyncio.run(NBAPropsScraper(client, now=NOW).scrape(book))
+
+    def test_firestore_decodes_nested_maps_arrays_and_decimal_odds(self):
+        result = firestore_document({'name': 'projects/p/databases/d/documents/markets/m', 'fields': {
+            'name': {'stringValue': 'Player Points'}, 'outcomes': {'mapValue': {'fields': {
+                'o': {'mapValue': {'fields': {'odds': {'doubleValue': 1.85}, 'active': {'booleanValue': True}}}}}}},
+            'allowedSelectionTypes': {'arrayValue': {'values': [{'stringValue': 'SingleOutcome'}]}},
+            'count': {'integerValue': '2'}}})
+        self.assertEqual(result['id'], 'm')
+        self.assertEqual(result['outcomes']['o'], {'odds': 1.85, 'active': True})
+        self.assertEqual(result['allowedSelectionTypes'], ['SingleOutcome'])
+        self.assertEqual(result['count'], 2)
+
+
+class BrowserFeedTests(unittest.TestCase):
+    def test_http_failure_recovers_without_marking_bookmaker_failed(self):
+        async def run():
+            feed = FeedClient()
+            feed.browser_json = AsyncMock(return_value={'events': []})
+            with patch('urllib.request.urlopen', side_effect=OSError('HTTP 403')), patch('asyncio.sleep', new=AsyncMock()):
+                result = await feed.get('https://web20-api.bluebet.com.au/MasterCategory?EventTypeId=107')
+            self.assertEqual(result, {'events': []})
+            self.assertEqual(feed.errors, [])
+            feed.browser_json.assert_awaited_once()
+            with patch('urllib.request.urlopen') as http:
+                await feed.get('https://web20-api.bluebet.com.au/MasterEvent?MasterEventId=1')
+                http.assert_not_called()
+        asyncio.run(run())
+
+    def test_warmed_betr_uses_page_fetch_with_session(self):
+        async def run():
+            feed = FeedClient()
+            page = MagicMock(url='https://www.betr.com.au/')
+            page.evaluate = AsyncMock(return_value={'Events': []})
+            feed.browser_page = AsyncMock(return_value=page)
+            result = await feed.browser_json('https://web20-api.bluebet.com.au/MasterEvent?MasterEventId=1')
+            self.assertEqual(result, {'Events': []})
+            script, args = page.evaluate.call_args.args
+            self.assertIn("credentials: 'include'", script)
+            self.assertIn('MasterEventId=1', args['url'])
+        asyncio.run(run())
+
+
 class MainLineTests(unittest.TestCase):
     def quotes(self, stat='points', period='game', line=20.5, prices=(1.9, 1.9), market='Main'):
         return [dict(bookmaker='Sportsbet', event_id='1', player_key='ace bailey', stat=stat,
@@ -272,7 +464,10 @@ class StorageTests(unittest.TestCase):
 
     def test_cli_dry_run_by_default(self):
         self.assertFalse(parse_args([]).write)
-        self.assertEqual(len(parse_args([]).bookmakers), 8)
+        self.assertEqual(parse_args([]).ttl_minutes, 60)
+        self.assertEqual(len(parse_args([]).bookmakers), 9)
+        self.assertNotIn('Picklebet', parse_args([]).bookmakers)
+        self.assertEqual(parse_args(['--bookmakers', 'Picklebet']).bookmakers, ['Picklebet'])
 
 
 if __name__ == '__main__':

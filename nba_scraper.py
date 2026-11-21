@@ -28,7 +28,7 @@ def load_env():
             os.environ[target] = os.environ[alias]
 
 
-def store_result(client, result, run_id, ttl_minutes=30):
+def store_result(client, result, run_id, ttl_minutes=60):
     """One transactional RPC per bookmaker: latest prices + immutable snapshots."""
     rows = []
     for quote in select_main_lines(result['rows']):
@@ -54,7 +54,7 @@ async def run(args):
     results = []
     # Bookmakers and events are independent; sequential execution keeps feed load bounded.
     for book in args.bookmakers:
-        feed = FeedClient(browser_fallback=not args.no_browser)
+        feed = FeedClient(browser_fallback=not args.no_browser, headless=not args.headed_browser)
         scraper = NBAPropsScraper(feed, days=args.days, max_events=args.max_events)
         try:
             result = await scraper.scrape(book)
@@ -62,6 +62,7 @@ async def run(args):
             result = {'bookmaker': book, 'rows': select_main_lines(scraper.rows.values()),
                       'events': scraper.seen_events, 'complete': False,
                       'errors': feed.errors + [{'error': str(exc)}]}
+            result['coverage'] = dict(scraper.coverage(), status='feed_error')
         finally:
             await feed.close()
         if client is not None:
@@ -70,6 +71,7 @@ async def run(args):
             except Exception as exc:
                 result['errors'].append({'storage_error': str(exc)})
                 result['complete'] = False
+                result['coverage']['status'] = 'storage_error'
         results.append(result)
         print(json.dumps({k: v for k, v in result.items() if k != 'rows'} | {
             'quotes': len(result['rows']), 'stats': sorted({r['stat'] for r in result['rows']})}), flush=True)
@@ -87,12 +89,16 @@ def positive_int(value):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--bookmakers', nargs='+', choices=BOOKMAKERS, default=list(BOOKMAKERS))
+    parser.add_argument('--bookmakers', nargs='+', choices=BOOKMAKERS,
+                        default=[b for b in BOOKMAKERS if b != 'Picklebet'],
+                        help='Bookmakers to scan; Picklebet is opt-in while its public feed denies access')
     parser.add_argument('--days', type=positive_int, default=7, help='Upcoming horizon, default 7 days')
     parser.add_argument('--max-events', type=positive_int, help='Limit each bookmaker for smoke tests; never retires older quotes')
-    parser.add_argument('--no-browser', action='store_true', help='Use HTTP only')
+    browser = parser.add_mutually_exclusive_group()
+    browser.add_argument('--no-browser', action='store_true', help='Use HTTP only')
+    browser.add_argument('--headed-browser', action='store_true', help='Use a visible Chromium window (Linux: run with xvfb-run)')
     parser.add_argument('--write', action='store_true', help='Persist using the SQL migration and Supabase credentials')
-    parser.add_argument('--ttl-minutes', type=positive_int, default=30)
+    parser.add_argument('--ttl-minutes', type=positive_int, default=60)
     parser.add_argument('--output', help='Write full quote data and coverage/errors as JSON')
     return parser.parse_args(argv)
 

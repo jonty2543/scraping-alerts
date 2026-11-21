@@ -5,11 +5,11 @@ import re
 import time
 import unicodedata
 from datetime import datetime, timezone
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, quote, urlencode, parse_qsl, urlunsplit
 from zoneinfo import ZoneInfo
 
 BRISBANE = ZoneInfo('Australia/Brisbane')
-BOOKMAKERS = ('Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betright', 'Betdeluxe', 'SurgeBet', 'Betr')
+BOOKMAKERS = ('Sportsbet', 'Pointsbet', 'Unibet', 'Palmerbet', 'Betright', 'Betdeluxe', 'SurgeBet', 'Betr', 'TAB', 'Picklebet')
 TARGET_STATS = {'points', 'rebounds', 'assists', 'three_pointers_made', 'steals', 'blocks'}
 SB = 'https://www.sportsbet.com.au/apigw/sportsbook-sports/Sportsbook/Sports/'
 PB = 'https://api.au.pointsbet.com/'
@@ -17,6 +17,35 @@ PALM = 'https://fixture.palmerbet.online'
 BR = 'https://next-api.betright.com.au/Sports/'
 BS = 'https://api.blackstream.com.au/api/sports/v1/'
 UB = 'https://www.unibet.com.au/sportsbook-feeds/views/filter/'
+TAB = 'https://api.beta.tab.com.au/v1/tab-info-service/sports/Basketball/competitions/NBA'
+BETR_SITE = 'https://www.betr.com.au/sports/Basketball/107/United-States-of-America/NBA/39251'
+PICKLE = 'https://firestore.googleapis.com/v1/projects/skrilla-c517f/databases/skrilla-sydney/documents'
+PICKLE_NBA = '8bf64da7-214f-42c1-979e-3251a9f91f67'
+
+
+def with_query(url, **params):
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query))
+    query.update(params)
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def firestore_document(document):
+    """Decode Firestore's public REST wire format without altering decimal odds."""
+    def value(node):
+        if 'mapValue' in node:
+            return {k: value(v) for k, v in node['mapValue'].get('fields', {}).items()}
+        if 'arrayValue' in node:
+            return [value(v) for v in node['arrayValue'].get('values', [])]
+        for kind in ('stringValue', 'timestampValue', 'booleanValue', 'doubleValue', 'nullValue'):
+            if kind in node:
+                return node[kind]
+        if 'integerValue' in node:
+            return int(node['integerValue'])
+        raise ValueError('Unexpected Firestore field type')
+    result = {k: value(v) for k, v in document['fields'].items()}
+    result['id'] = document['name'].rsplit('/', 1)[-1]
+    return result
 
 
 def text(value):
@@ -66,13 +95,13 @@ def is_nba(name):
 
 
 def available(node):
-    for flag in ('isOpenForBetting', 'isDisplayed'):
+    for flag in ('isOpenForBetting', 'isDisplayed', 'isOpen'):
         if flag in node and str(node[flag]).lower() == 'false':
             return False
     if any(str(node.get(k, '')).lower() == 'true' for k in ('suspended', 'isSuspended', 'isScratched', 'isHidden')):
         return False
     return all(text(node.get(k)) not in {'suspended', 'closed', 'inactive', 'settled', 'resulted', 's', 'c', 'i'}
-               for k in ('status', 'statusCode', 'state'))
+               for k in ('status', 'statusCode', 'state', 'bettingStatus'))
 
 
 def market_name(market):
@@ -127,9 +156,10 @@ def classify(name):
         period = 'game'
         for i, word in enumerate(('first', 'second', 'third', 'fourth'), 1):
             ordinal = ('1st', '2nd', '3rd', '4th')[i - 1]
-            if re.search(r'\b(?:' + word + '|' + ordinal + r')\s+(?:quarter|qtr)\b|\bq' + str(i) + r'\b', n):
+            period_number = '(?:' + word + '|' + ordinal + '|' + str(i) + ')'
+            if re.search(r'\b' + period_number + r'\s*(?:quarter|qtr|q)\b|\b(?:quarter|qtr|q)\s*' + period_number + r'\b', n):
                 period = 'q' + str(i)
-            if i <= 2 and re.search(r'\b(?:' + word + '|' + ordinal + r')\s+half\b', n):
+            if i <= 2 and re.search(r'\b' + period_number + r'\s*(?:half|h)\b|\b(?:half|h)\s*' + period_number + r'\b', n):
                 period = 'h' + str(i)
     if 'excluding overtime' in n or 'regulation' in n:
         period += '_regulation'
@@ -260,27 +290,40 @@ def parse_selection(market, outcome, teams=()):
 
 class FeedClient:
     """Bounded HTTP retries plus optional browser fallback, with visible failures."""
-    def __init__(self, browser_fallback=True):
+    def __init__(self, browser_fallback=True, headless=True):
         import asyncio
         self.browser_fallback = browser_fallback
+        self.headless = headless
         self.errors = []
         self._playwright = self._browser = self._context = None
         self._gate = asyncio.Semaphore(4)
         self._browser_lock = asyncio.Lock()
+        self._pages = {}
+        self._page_locks = {}
+        self.browser_requests = 0
+        self._browser_hosts = set()
 
-    async def get(self, url, optional=False):
+    async def get(self, url, optional=False, headers=None):
         async with self._gate:
-            return await self._get(url, optional)
+            return await self._get(url, optional, headers)
 
-    async def _get(self, url, optional=False):
+    async def _get(self, url, optional=False, headers=None):
         import asyncio
         from urllib.request import Request, urlopen
         def request():
             with urlopen(Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json',
-                                              'Cache-Control': 'no-cache'}), timeout=20) as response:
+                                              'Cache-Control': 'no-cache', **(headers or {})}), timeout=20) as response:
                 import json
                 return json.load(response)
         error = None
+        host = urlsplit(url).netloc
+        if host in self._browser_hosts:
+            try:
+                return await self.browser_json(url, headers=headers)
+            except Exception as exc:
+                if not optional:
+                    self.errors.append({'url': url, 'error': 'Browser feed: ' + str(exc)})
+                return None
         for attempt in range(2):
             try:
                 return await asyncio.to_thread(request)
@@ -290,26 +333,79 @@ class FeedClient:
                     await asyncio.sleep(0.5)
         if self.browser_fallback:
             try:
-                async with self._browser_lock:
-                    if self._context is None:
-                        from playwright.async_api import async_playwright
-                        self._playwright = await async_playwright().start()
-                        self._browser = await self._playwright.chromium.launch(headless=True)
-                        self._context = await self._browser.new_context(user_agent='Mozilla/5.0')
-                response = await self._context.request.get(url, timeout=20000)
-                if response.ok:
-                    return await response.json()
+                result = await self.browser_json(url, headers=headers)
+                self._browser_hosts.add(host)
+                return result
             except Exception as exc:
                 error = str(error) + '; browser fallback: ' + str(exc)
         if not optional:
             self.errors.append({'url': url, 'error': str(error)})
         return None
 
+    async def query_json(self, url, body):
+        """Read-only Firestore runQuery uses POST; no auth or App Check bypass."""
+        import asyncio
+        import json
+        from urllib.request import Request, urlopen
+        def request():
+            req = Request(url, data=json.dumps(body).encode(), method='POST', headers={
+                'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json', 'Content-Type': 'application/json'})
+            with urlopen(req, timeout=20) as response:
+                return json.load(response)
+        async with self._gate:
+            try:
+                return await asyncio.to_thread(request)
+            except Exception as exc:
+                self.errors.append({'url': url, 'error': str(exc)})
+                return None
+
+    async def browser_page(self, key):
+        """Fresh, isolated browser; never attaches to a user's logged-in profile."""
+        async with self._browser_lock:
+            if self._context is None:
+                from playwright.async_api import async_playwright
+                self._playwright = await async_playwright().start()
+                self._browser = await self._playwright.chromium.launch(headless=self.headless, channel='chromium')
+                self._context = await self._browser.new_context()
+            if key not in self._pages:
+                self._pages[key] = await self._context.new_page()
+            return self._pages[key]
+
+    async def browser_json(self, url, headers=None):
+        """Execute requests in a real page, including the site's normal session setup."""
+        import asyncio
+        host = urlsplit(url).netloc
+        lock = self._page_locks.setdefault(host, asyncio.Lock())
+        async with lock:
+            page = await self.browser_page(host)
+            self.browser_requests += 1
+            if host == 'web20-api.bluebet.com.au':
+                if page.url == 'about:blank':
+                    # The NBA page makes this request itself and establishes the public session.
+                    async with page.expect_response(lambda r: r.url == url and r.ok, timeout=30000) as pending:
+                        await page.goto(BETR_SITE, wait_until='domcontentloaded', timeout=30000)
+                    return await (await pending.value).json()
+                result = await page.evaluate('''async ({url, headers}) => {
+                    const response = await fetch(url, {credentials: 'include', headers,
+                        signal: AbortSignal.timeout(20000)});
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    return await response.json();
+                }''', {'url': url, 'headers': headers or {'Accept': 'application/json'}})
+                return result
+            # Navigating to the public JSON endpoint uses Chromium's network stack,
+            # unlike APIRequestContext, which was only repeating the failed HTTP request.
+            await page.set_extra_http_headers(headers or {})
+            response = await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            if response is None or not response.ok:
+                raise ValueError('Browser feed HTTP ' + str(response.status if response else 'no response'))
+            return await response.json()
+
     async def close(self):
         if self._browser:
             await self._browser.close()
         if self._playwright:
             await self._playwright.stop()
+        self._pages.clear()
 
 
 class NBAPropsScraper:
@@ -411,10 +507,26 @@ class NBAPropsScraper:
                     url = None
 
     async def palmerbet(self):
-        url = PALM + '/fixtures/sports/b26e5acc-02ff-4b22-ae69-0491fbd2500e/matches?sportType=basketball&pageSize=1000&channel=website'
-        feed = await self.client.get(url)
-        self.require((feed or {}).get('matches'), list, 'Palmerbet matches')
-        for game in (feed or {}).get('matches', []):
+        root = PALM + '/fixtures/sports/b26e5acc-02ff-4b22-ae69-0491fbd2500e'
+        sport = await self.client.get(root + '?sportType=Basketball&channel=website')
+        self.require((sport or {}).get('sportItem', {}).get('subItems'), list, 'Palmerbet competitions')
+        competitions = [c for c in sport['sportItem']['subItems'] if is_nba(c.get('title'))]
+        if not competitions:
+            raise ValueError('Palmerbet NBA competition not found')
+        games = {}
+        for comp in competitions:
+            url = PALM + '/fixtures/sports/' + comp['id'] + '/matches?sportType=Basketball&pageSize=1000&channel=website'
+            visited = set()
+            while url:
+                if url in visited:
+                    raise ValueError('Palmerbet repeated pagination link')
+                visited.add(url)
+                feed = await self.client.get(url)
+                self.require((feed or {}).get('matches'), list, 'Palmerbet NBA matches')
+                games.update((g['eventId'], g) for g in feed['matches'])
+                next_link = next((l['href'] for l in feed.get('_links', []) if l.get('rel') == 'next'), None)
+                url = with_query(urljoin(PALM, next_link), channel='website') if next_link else None
+        for game in games.values():
             if not any(is_nba(p.get('title')) for p in game.get('paths', [])) or game.get('status') != 'NotStarted':
                 continue
             teams = [game['homeTeam']['title'], game['awayTeam']['title']]
@@ -433,7 +545,7 @@ class NBAPropsScraper:
                     return
                 for link in market.get('_links', []):
                     if link.get('rel') == 'price' and link.get('method', 'GET') == 'GET':
-                        detail = await self.client.get(urljoin(PALM, link['href']) + '&channel=website')
+                        detail = await self.client.get(with_query(urljoin(PALM, link['href']), channel='website'))
                         self.require((detail or {}).get('market', {}).get('outcomes'), list, 'Palmerbet market prices')
                         self.collect(event, detail)
                         break
@@ -445,10 +557,12 @@ class NBAPropsScraper:
             return node.get(name, default)
         feed = await self.client.get(base + 'MasterCategory?eventTypeId=107')
         self.require(field(feed or {}, 'masterCategories'), list, book + ' categories')
+        found_nba = False
         for master in field(feed or {}, 'masterCategories', []):
             for category in field(master, 'categories', []):
                 if not is_nba(field(category, 'categoryName')):
                     continue
+                found_nba = True
                 detail = await self.client.get(base + 'Category?categoryId=' + str(field(category, 'categoryId')))
                 self.require(field(detail or {}, 'masterCategories'), list, book + ' league events')
                 for node in walk(detail):
@@ -459,6 +573,15 @@ class NBAPropsScraper:
                         payload = await self.client.get(base + 'MasterEventEvents?masterEventId=' + str(field(game, 'masterEventId')))
                         self.require(field(payload or {}, 'events'), list, book + ' event markets')
                         self.collect(event, payload)
+                        async def collect_group(group):
+                            detail = await self.client.get(base + 'MasterEventEvents?masterEventId=' +
+                                str(game['masterEventId']) + '&groupTypeCode=' + quote(group['groupTypeCode']))
+                            self.require((detail or {}).get('events'), list, book + ' group markets')
+                            self.collect(event, detail)
+                        self.require(payload.get('groupLinks'), list, book + ' market groups')
+                        await self.collect_many(collect_group(g) for g in payload['groupLinks'])
+        if not found_nba:
+            raise ValueError(book + ' NBA category not found')
 
     async def betright(self):
         await self.category_feed('Betright', BR)
@@ -467,10 +590,12 @@ class NBAPropsScraper:
         base = 'https://web20-api.bluebet.com.au/'
         feed = lower_keys(await self.client.get(base + 'MasterCategory?EventTypeId=107&WithLevelledMarkets=true'))
         self.require((feed or {}).get('masterCategories'), list, 'Betr categories')
+        found_nba = False
         for master in feed['masterCategories']:
             for category in master.get('categories', []):
                 if not is_nba(category.get('categoryName')):
                     continue
+                found_nba = True
                 for game in category.get('masterEvents', []):
                     event = self.event('Betr', game['masterEventId'], game['masterEventName'], game['maxAdvertisedStartTime'])
                     if not event:
@@ -485,24 +610,165 @@ class NBAPropsScraper:
                         self.collect(event, payload)
                     self.require(detail.get('groupLinks'), list, 'Betr market groups')
                     await self.collect_many(collect_group(g) for g in detail['groupLinks'])
+        if not found_nba:
+            raise ValueError('Betr NBA category not found')
 
     async def blackstream(self, book):
-        feed = await self.client.get(BS + 'sports/basketball/competitions')
+        # The branded website's public runtime config identifies BetDeluxe as org 400.
+        headers = {'X-NextGen-OrgId': '400'} if book == 'Betdeluxe' else {}
+        async def get(path):
+            return await self.client.get(BS + path, headers=headers)
+        feed = await get('sports/basketball/competitions')
         self.require((feed or {}).get('data', {}).get('regions'), list, book + ' competitions')
         ids = {c['id'] for n in walk(feed) for c in n.get('competitions', []) if is_nba(c.get('name'))}
         if not ids:
             raise ValueError(book + ' NBA competition not found')
         for comp in ids:
             base = BS + 'sports/basketball/competitions/' + str(comp) + '/events'
-            events = await self.client.get(base)
+            events = await self.client.get(base, headers=headers)
             self.require((events or {}).get('data', {}).get('events'), list, book + ' events')
             for game in (events or {}).get('data', {}).get('events', []):
                 event = self.event(book, game['id'], game['name'], game['advertisedStartTimeUtc'])
                 if event:
                     self.collect(event, game)
-                    detail = await self.client.get(BS + 'events/' + str(game['id']) + '?includeMarkets=true')
+                    detail = await get('events/' + str(game['id']) + '?includeMarkets=true')
                     self.require((detail or {}).get('data', {}).get('marketGroups'), list, book + ' event markets')
                     self.collect(event, detail)
+                    players = await get('events/' + str(game['id']) + '/player-markets')
+                    self.require((players or {}).get('data', {}).get('playerMarketGroups'), list, book + ' player markets')
+                    for group in players['data']['playerMarketGroups']:
+                        if not available(group) or group.get('isActive') is False:
+                            continue
+                        for player in group.get('players', []):
+                            if not available(player):
+                                continue
+                            for selection in player.get('selections', []):
+                                market = {'id': selection.get('marketId'),
+                                          'name': selection.get('marketFullName') or (group['name'] + ' ' + selection.get('marketName', '')),
+                                          'outcomes': [dict(selection, name=player['name'] + ' ' + selection.get('marketName', ''), playerName=player['name'])]}
+                                self.collect(event, market)
+
+    async def tab(self):
+        feed = await self.client.get(TAB + '?jurisdiction=QLD&numTopMarkets=5')
+        self.require((feed or {}).get('matches'), list, 'TAB NBA matches')
+        # TAB's abbreviated team labels must match the full names in other feeds.
+        names = {
+            'Atlanta': 'Atlanta Hawks', 'Boston': 'Boston Celtics', 'Brooklyn': 'Brooklyn Nets',
+            'Charlotte': 'Charlotte Hornets', 'Chicago': 'Chicago Bulls', 'Cleveland': 'Cleveland Cavaliers',
+            'Dallas': 'Dallas Mavericks', 'Denver': 'Denver Nuggets', 'Detroit': 'Detroit Pistons',
+            'Golden State': 'Golden State Warriors', 'Houston': 'Houston Rockets',
+            'Indiana': 'Indiana Pacers', 'LA Clippers': 'Los Angeles Clippers',
+            'LA Lakers': 'Los Angeles Lakers', 'Memphis': 'Memphis Grizzlies', 'Miami': 'Miami Heat',
+            'Milwaukee': 'Milwaukee Bucks', 'Minnesota': 'Minnesota Timberwolves',
+            'New Orleans': 'New Orleans Pelicans', 'New York': 'New York Knicks',
+            'Oklahoma City': 'Oklahoma City Thunder', 'Orlando': 'Orlando Magic',
+            'Philadelphia': 'Philadelphia 76ers', 'Phoenix': 'Phoenix Suns', 'Portland': 'Portland Trail Blazers',
+            'Sacramento': 'Sacramento Kings', 'San Antonio': 'San Antonio Spurs', 'Toronto': 'Toronto Raptors',
+            'Utah': 'Utah Jazz', 'Washington': 'Washington Wizards',
+        }
+        for game in feed['matches']:
+            teams = [names.get(t, t) for t in game.get('competitors', [])]
+            event = self.event('TAB', game['id'], game['name'], game['startTime'], teams, live=game.get('inPlay'))
+            if not event:
+                continue
+            # Reject both shortened and full team names as possible "players".
+            event['_teams'] = teams + game.get('competitors', [])
+            link = game.get('_links', {}).get('self')
+            if not link or urlsplit(link).netloc not in {'api.beta.tab.com.au', 'webapi.tab.com.au'}:
+                raise ValueError('Missing or unexpected TAB match URL')
+            detail = await self.client.get(link)
+            self.require((detail or {}).get('markets'), list, 'TAB match markets')
+            for market in detail['markets']:
+                if (market.get('isFuture') or market.get('phoneBettingOnly') or market.get('inPlay')
+                        or market.get('bettingStatus') != 'Open'):
+                    continue
+                option = market.get('betOption') or market['name']
+                if text(option).startswith(('home total ', 'away total ', 'total ')):
+                    continue
+                normalized = dict(market, name=option, outcomes=[])
+                for prop in market.get('propositions', []):
+                    if prop.get('bettingStatus') == 'Open' and prop.get('isOpen', True):
+                        normalized['outcomes'].append(dict(prop, price=prop.get('returnWin')))
+                self.collect(event, normalized)
+
+    async def picklebet(self):
+        # The tournament UUID and document shapes are published by Picklebet's
+        # own NBA page. This adapter stays opt-in while public REST access is denied.
+        filters = [('tournamentId', PICKLE_NBA), ('eventType', 'MATCH'), ('visible', True), ('tab', 'next')]
+        query = {'structuredQuery': {'from': [{'collectionId': 'bettingEvents'}],
+            'where': {'compositeFilter': {'op': 'AND', 'filters': [
+                {'fieldFilter': {'field': {'fieldPath': field}, 'op': 'EQUAL',
+                    'value': {'booleanValue' if isinstance(val, bool) else 'stringValue': val}}}
+                for field, val in filters]}}, 'limit': 1000}}
+        feed = await self.client.query_json(PICKLE + ':runQuery', query)
+        if feed is None:
+            raise ValueError('Picklebet public Firestore access failed; a permission denial is not an empty NBA board')
+        self.require(feed, list, 'Picklebet NBA query')
+        if any('error' in row for row in feed):
+            raise ValueError('Picklebet NBA query returned an error')
+        games = [firestore_document(r['document']) for r in feed if 'document' in r]
+        if len(games) >= 1000:
+            raise ValueError('Picklebet query limit reached; refusing to mark a truncated scan complete')
+        for game in games:
+            if game.get('eventType') != 'MATCH' or not game.get('visible') or game.get('tournamentId') != PICKLE_NBA:
+                continue
+            competitors = game.get('competitors') or {}
+            teams = [c['name'] for c in competitors.values() if c.get('type') == 'FRANCHISE']
+            event = self.event('Picklebet', game['id'], game['eventName'], game['scheduledStartTime'], teams,
+                               live=game.get('tab') != 'next')
+            if not event:
+                continue
+            root = PICKLE + '/bettingEvents/' + quote(game['id'], safe='')
+            if not any(c.get('type') == 'PLAYER' for c in competitors.values()):
+                for player in await self.firestore_collection(root + '/competitorsV2'):
+                    competitors[player['id']] = player
+            markets = await self.firestore_collection(root + '/markets')
+            for market in markets:
+                self.collect_pickle_market(event, market, competitors)
+
+    async def firestore_collection(self, url):
+        documents, seen = [], set()
+        while url:
+            if url in seen:
+                raise ValueError('Picklebet repeated pagination token')
+            seen.add(url)
+            feed = await self.client.get(with_query(url, pageSize=300))
+            self.require(feed, dict, 'Picklebet collection')
+            if 'documents' not in feed and set(feed) - {'nextPageToken'}:
+                raise ValueError('Unexpected Picklebet collection response')
+            self.require(feed.get('documents', []), list, 'Picklebet documents')
+            documents.extend(firestore_document(d) for d in feed.get('documents', []))
+            token = feed.get('nextPageToken')
+            url = with_query(url, pageToken=token) if token else None
+        return documents
+
+    def collect_pickle_market(self, event, market, competitors):
+        if (market.get('status') != 'ACTIVE' or market.get('bettingType') != 'Prematch'
+                or market.get('campaignOnly') or market.get('promotional')
+                or 'SingleOutcome' not in market.get('allowedSelectionTypes', [])):
+            return
+        specifiers = market.get('specifiers') or {}
+        outcomes = []
+        for identity, outcome in market.get('outcomes', {}).items():
+            if outcome.get('active') is False:
+                continue
+            player_id = outcome.get('competitorId') or specifiers.get('player') or specifiers.get('competitor')
+            player = competitors.get(player_id, {})
+            label = outcome.get('name') or outcome.get('type', '').title()
+            normalized = dict(outcome, id=identity, name=label, price=outcome.get('odds'))
+            if player.get('type') == 'PLAYER' and not player.get('scratched'):
+                normalized['playerName'] = player['name']
+            elif player.get('type') in {'FRANCHISE', 'FLAG'} or player.get('scratched'):
+                continue
+            if str(outcome.get('type')).upper() in {'OVER', 'UNDER'}:
+                normalized['name'] = outcome['type'].title() + ' ' + str(specifiers.get('total', ''))
+            elif not re.search(r'\d\s*\+', label):
+                thresholds = {v['criteria']['GTE'] for v in (outcome.get('winCriteria') or {}).values()
+                              if isinstance(v.get('criteria'), dict) and 'GTE' in v['criteria']}
+                if len(thresholds) == 1:
+                    normalized['name'] = label + ' ' + str(next(iter(thresholds))) + '+'
+            outcomes.append(normalized)
+        self.collect(event, dict(market, outcomes=outcomes))
 
     async def unibet(self):
         feed = await self.client.get(UB + 'basketball/nba/matches?includeParticipants=true&useCombined=true')
@@ -546,4 +812,24 @@ class NBAPropsScraper:
             await getattr(self, bookmaker.lower())()
         return {'bookmaker': bookmaker, 'rows': select_main_lines(self.rows.values()), 'errors': list(self.client.errors),
                 'events': self.seen_events, 'complete': not self.client.errors and self.max_events is None,
+                'coverage': self.coverage(),
                 'elapsed_seconds': round(time.monotonic() - started, 2)}
+
+    def coverage(self):
+        from collections import Counter
+        parsed = list(self.rows.values())
+        selected = select_main_lines(parsed)
+        sides = Counter(r['side'] for r in parsed)
+        if self.client.errors:
+            status = 'feed_error'
+        elif selected:
+            status = 'available'
+        elif not self.seen_events:
+            status = 'no_upcoming_events'
+        elif parsed and sides['at_least'] == len(parsed):
+            status = 'milestones_only'
+        else:
+            status = 'no_eligible_pairs'
+        return {'status': status, 'parsed_selections': len(parsed), 'eligible_pairs': len(selected) // 2,
+                'milestone_selections': sides['at_least'], 'parsed_sides': dict(sides),
+                'browser_requests': getattr(self.client, 'browser_requests', 0)}

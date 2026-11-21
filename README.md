@@ -38,7 +38,8 @@ Playwright. HTTP-only dry runs use Python's standard library.
 python3 -m pip install -r requirements.txt
 python3 -m playwright install chromium
 
-# Fetch all eight bookmaker adapters and export quotes, coverage and errors.
+# Fetch the nine default adapters and export quotes, coverage and errors.
+# Picklebet is opt-in because its public feed currently denies access.
 python3 nba_scraper.py --output nba_props.json
 
 # Quick HTTP-only test of one upcoming event per bookmaker.
@@ -50,6 +51,56 @@ limits each bookmaker and always marks the result as incomplete. Each bookmaker
 prints event/quote counts, normalized stats, errors, and whether the scan completed.
 A feed or storage error gives exit status 1; configuration errors give status 2.
 Zero listed props is reported as zero, separately from request failures.
+The `coverage` object reports `available`, `milestones_only`, `no_eligible_pairs`,
+`no_upcoming_events`, or `feed_error`, plus eligible pair counts, parsed sides,
+milestone counts, and browser request counts. Storage failures report `storage_error`.
+
+### Browser feeds and EC2
+
+betr's fallback now opens its public NBA page to establish a session, then fetches
+market groups inside that page. It reuses the session instead of retrying blocked
+HTTP requests for every group. TAB's public JSON feed also uses Chromium's network
+stack when plain HTTP fails. No account login is needed for these public feeds.
+
+Local checks on 21 November 2026 found TAB accessible in normal Chromium but
+blocked in headless Chromium. Use `--headed-browser` locally. On a Linux server,
+run that mode inside Xvfb (install the distribution's `xvfb` package and Playwright's
+browser dependencies first). For the EC2 job, omit Sportsbet if that host is blocked:
+
+```sh
+python3 -m playwright install --with-deps chromium
+
+# Dry run first; add --write after verifying the JSON coverage and errors.
+xvfb-run -a python3 nba_scraper.py --headed-browser \
+  --bookmakers Pointsbet Unibet Palmerbet Betright Betr TAB Betdeluxe \
+  --output nba_props.json
+```
+
+Use the same virtual environment/interpreter as the scheduled job. Keep a run
+interval shorter than the configured TTL and prevent overlapping runs. Browser
+mode cannot guarantee access from an EC2 IP; verify coverage on that host before
+switching the scheduled job. Failed and limited scans do not retire older prices.
+
+`scripts/run_nba_props_ec2.sh` packages this command for the existing scheduler.
+It checks for `xvfb-run` and `flock`, prevents overlapping runs, and writes coverage
+to `.nba-run/latest.json`. It runs in dry-run mode unless `--write` is supplied:
+
+```sh
+bash scripts/run_nba_props_ec2.sh            # Validate feed access on EC2
+bash scripts/run_nba_props_ec2.sh --write    # Refresh Supabase
+```
+
+`NBA_PYTHON`, `NBA_STATE_DIR`, and `NBA_BOOKMAKERS` override the interpreter,
+output/lock directory, and space-separated bookmaker list. The script does not
+install packages, change cron, or configure a new scheduler automatically.
+
+Picklebet has an opt-in Firestore adapter (`--bookmakers Picklebet`) based on its
+published NBA tournament ID and frontend schema. It decodes player identities,
+decimal odds and paginated markets, and excludes live, suspended, promotional
+and SGM-only markets. **Live public REST access currently returns permission
+denials**, including in a fresh browser. This adapter is not enabled by default
+and is not verified as a working live source. A denial is a failed scan, never a
+successful empty scan. No credentials or access-control workarounds are used.
 
 ### Supabase setup
 
@@ -80,7 +131,7 @@ sport tables cannot uniquely describe a player's stat, period, side, and line:
 - `nba_player_props_lines`: one row per selected line, with `over_odds` and
   `under_odds` together. Apply the SQL file again to add this view if already set up.
 
-Query the **current** view for usable odds. Rows expire 30 minutes after fetch;
+Query the **current** view for usable odds. Rows expire 60 minutes after fetch;
 change that with `--ttl-minutes` to suit your existing scheduler. A complete scan
 retires missing selections for that bookmaker. A failed/partial/limited scan can
 refresh successful quotes but cannot retire other selections. A transactional RPC
@@ -102,11 +153,14 @@ Before narrowing to the six over/under stats, live HTTP smoke checks on 31 Octob
 | --- | --- |
 | Sportsbet | NBA events → all event markets; hundreds of player selections per game |
 | Pointsbet | NBA competition discovery → paginated events → full fixed-odds markets, including alternates |
-| Palmerbet | NBA match paths → market list → individual price links, with four requests at a time |
-| Betright | NBA category → master events → complete event outcomes |
+| Palmerbet | Discover the NBA competition first → its own match list → individual market price links. The general basketball list can omit NBA games. Requests are limited to four at a time. |
+| Betright | NBA category → master events → default markets plus every advertised `groupTypeCode` |
 | Unibet | NBA view → event detail + Kambi bet offers; the tested event had only game lines and no player props |
-| SurgeBet / Betdeluxe | Both existing adapters use the same Blackstream API. The NBA runner follows that shared feed, including nested outcome stacks. These are not independently verified branded prices. |
+| Betdeluxe | Blackstream event and dedicated player-market endpoints, with the website's public `X-NextGen-OrgId: 400` header on every request. Milestone-only single-stat feeds still produce no eligible O/U pairs. |
+| SurgeBet | Existing shared Blackstream feed, including nested outcome stacks and dedicated player markets. Its branded identity remains unverified; it is omitted from the EC2 command above. |
 | Betr | BlueBet NBA master category → `MasterEvent` → each `GroupTypeCode`; handles PascalCase fields and .NET timestamps. The obsolete category/detail endpoints are not used. |
+| TAB | NBA competition → full match details → propositions. Uses `returnWin` decimal prices, preserves source market/selection IDs, and maps abbreviated teams to full franchise names. |
+| Picklebet (opt-in) | Firestore NBA query → paginated player/market documents. Live access currently denied; parser tests are not evidence of live availability. |
 
 Polymarket is currently integrated only for NBA moneylines in this repository;
 it is not represented as a player-prop bookmaker. Browser fallback is optional
