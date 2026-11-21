@@ -82,13 +82,25 @@ mode cannot guarantee access from an EC2 IP; verify coverage on that host before
 switching the scheduled job. Failed and limited scans do not retire older prices.
 
 `scripts/run_nba_props_ec2.sh` packages this command for the existing scheduler.
-It checks for `xvfb-run` and `flock`, prevents overlapping runs, and writes coverage
-to `.nba-run/latest.json`. It runs in dry-run mode unless `--write` is supplied:
+It uses an existing `DISPLAY`, `xvfb-run`, or a private authenticated `Xvfb` display
+on Amazon Linux, prevents overlapping runs using `flock`, and writes coverage
+to `.nba-run/latest.json`. A display it starts is stopped when the run exits.
+It runs in dry-run mode unless `--write` is supplied:
 
 ```sh
 bash scripts/run_nba_props_ec2.sh            # Validate feed access on EC2
 bash scripts/run_nba_props_ec2.sh --write    # Refresh Supabase
 ```
+
+On Amazon Linux 2 or 2023, install the native virtual display packages once:
+
+```sh
+sudo yum install -y xorg-x11-server-Xvfb xorg-x11-xauth util-linux
+```
+
+Amazon Linux need not provide the `xvfb-run` shell wrapper. If native Xvfb startup
+fails, inspect `.nba-run/xvfb.log`. Browser installation must use the interpreter
+selected by the runner (`NBA_PYTHON` or `.venv/bin/python`, falling back to `python3`).
 
 `NBA_PYTHON`, `NBA_STATE_DIR`, and `NBA_BOOKMAKERS` override the interpreter,
 output/lock directory, and space-separated bookmaker list. The script does not
